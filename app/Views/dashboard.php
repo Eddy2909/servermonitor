@@ -1,0 +1,465 @@
+<?php
+$activityRows = $activityChecks ?? $recentChecks ?? [];
+$activityTotal = count($activityRows);
+$activityUp = 0;
+$activityDown = 0;
+$activityLatencyTotal = 0;
+$activityLatencyCount = 0;
+$activityServices = [];
+$activityLastChecked = '-';
+foreach ($activityRows as $activityRow) {
+    $activityStatus = (string)($activityRow['status'] ?? '');
+    if ($activityStatus === 'up') {
+        $activityUp++;
+    }
+    if ($activityStatus === 'down') {
+        $activityDown++;
+    }
+    if (isset($activityRow['response_time_ms']) && $activityRow['response_time_ms'] !== null) {
+        $activityLatencyTotal += (int)$activityRow['response_time_ms'];
+        $activityLatencyCount++;
+    }
+    if (!empty($activityRow['server_id'])) {
+        $activityServices[(string)$activityRow['server_id']] = true;
+    }
+}
+if (!empty($activityRows[0]['checked_at'])) {
+    $activityLastChecked = (string)$activityRows[0]['checked_at'];
+}
+$activityAvgLatency = $activityLatencyCount > 0 ? (int)round($activityLatencyTotal / $activityLatencyCount) : 0;
+?>
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="<?= e($csrf) ?>">
+    <title><?= e($appName) ?> Dashboard</title>
+    <link rel="stylesheet" href="assets/app.css?v=<?= e((string)(@filemtime(APP_ROOT . '/assets/app.css') ?: random_int(100000, 999999))) ?>">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <div class="brand-block">
+                <div class="brand-mark">PSM</div>
+                <div>
+                    <strong><?= e($appName) ?></strong>
+                    <span>Monitor Console</span>
+                </div>
+            </div>
+            <nav class="side-nav">
+                <a class="<?= $activePage === 'dashboard' ? 'active' : '' ?>" href="index.php">Dashboard</a>
+                <a class="<?= $activePage === 'servers' ? 'active' : '' ?>" href="index.php?page=servers">Server</a>
+                <a class="<?= $activePage === 'activity' ? 'active' : '' ?>" href="index.php?page=activity">Aktivitaet</a>
+                <a class="<?= $activePage === 'settings' ? 'active' : '' ?>" href="index.php?page=settings">Einstellungen</a>
+                <a href="public.php" target="_blank" rel="noopener">Public Page</a>
+            </nav>
+            <form method="post" action="index.php?action=logout" class="logout-form">
+                <input type="hidden" name="_csrf" value="<?= e($csrf) ?>">
+                <button type="submit" class="btn ghost wide">Logout</button>
+            </form>
+        </aside>
+
+        <main class="content">
+            <header class="topbar">
+                <div>
+                    <p class="eyebrow"><?= $activePage === 'settings' ? 'Configuration' : ($activePage === 'activity' ? 'Timeline' : ($activePage === 'servers' ? 'Inventory' : 'Operations')) ?></p>
+                    <h1><?= $activePage === 'settings' ? 'Einstellungen' : ($activePage === 'activity' ? 'Aktivitaet' : ($activePage === 'servers' ? 'Server' : 'Service Health')) ?></h1>
+                </div>
+                <div class="top-actions">
+                    <span class="user-pill"><?= e($username) ?></span>
+                    <button type="button" class="btn primary" data-open-modal onclick="var m=document.getElementById('serverModal'); if(window.psmOpenModal){window.psmOpenModal(null);} else if(m){m.classList.add('is-open');m.style.display='grid';m.setAttribute('aria-hidden','false');} return false;">Neuer Check</button>
+                </div>
+            </header>
+
+            <?php if ($activePage === 'dashboard'): ?>
+            <section class="metric-grid" aria-label="Status Kennzahlen">
+                <article class="metric-card">
+                    <span class="metric-label">Targets</span>
+                    <strong><?= e($stats['total']) ?></strong>
+                    <small>ueberwachte Eintraege</small>
+                </article>
+                <article class="metric-card accent-ok">
+                    <span class="metric-label">Online</span>
+                    <strong><?= e($stats['online']) ?></strong>
+                    <small>aktuell erreichbar</small>
+                </article>
+                <article class="metric-card accent-danger">
+                    <span class="metric-label">Offline</span>
+                    <strong><?= e($stats['offline']) ?></strong>
+                    <small>brauchen Aufmerksamkeit</small>
+                </article>
+                <article class="metric-card">
+                    <span class="metric-label">Avg. Latency</span>
+                    <strong><?= e($stats['avg_latency']) ?> ms</strong>
+                    <small><?= e($stats['avg_uptime']) ?>% Uptime Score</small>
+                </article>
+            </section>
+
+            <section class="chart-grid" id="charts">
+                <article class="panel">
+                    <div class="panel-header compact">
+                        <div>
+                            <p class="eyebrow">Auswertung</p>
+                            <h2>Latenzverlauf</h2>
+                        </div>
+                    </div>
+                    <canvas id="latencyChart" class="dashboard-chart" height="170"></canvas>
+                </article>
+                <article class="panel">
+                    <div class="panel-header compact">
+                        <div>
+                            <p class="eyebrow">Auswertung</p>
+                            <h2>Status Mix</h2>
+                        </div>
+                    </div>
+                    <canvas id="statusChart" class="dashboard-chart" height="170"></canvas>
+                </article>
+            </section>
+            <?php endif; ?>
+
+            <?php if ($activePage === 'dashboard' || $activePage === 'servers'): ?>
+            <section class="dashboard-grid <?= $activePage === 'dashboard' ? '' : 'single-grid' ?>">
+                <div class="panel wide-panel" id="servers">
+                    <div class="panel-header">
+                        <div>
+                            <p class="eyebrow">Inventory</p>
+                            <h2>Server & Websites</h2>
+                        </div>
+                        <div class="table-tools">
+                            <input type="search" id="tableSearch" placeholder="Suchen">
+                            <select id="statusFilter" aria-label="Status filtern">
+                                <option value="">Alle Status</option>
+                                <option value="up">Online</option>
+                                <option value="down">Offline</option>
+                                <option value="unknown">Unbekannt</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="table-wrap">
+                        <table class="data-table" id="serversTable">
+                            <thead>
+                                <tr>
+                                    <th data-sort="name">Name</th>
+                                    <th data-sort="type">Typ</th>
+                                    <th data-sort="status">Status</th>
+                                    <th data-sort="latency">Latenz</th>
+                                    <th data-sort="score">Score</th>
+                                    <th data-sort="checked">Letzter Check</th>
+                                    <th>Aktionen</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($servers as $server): ?>
+                                    <?= ModernMonitor\View::render('partials/server_row.php', ['server' => $server]) ?>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <?php if ($activePage === 'dashboard'): ?>
+                <aside class="panel" id="activity">
+                    <div class="panel-header compact">
+                        <div>
+                            <p class="eyebrow">Signals</p>
+                            <h2>Letzte Checks</h2>
+                        </div>
+                    </div>
+                    <div class="activity-list">
+                        <?php if (empty($recentChecks)): ?>
+                            <p class="muted">Noch keine Checks vorhanden.</p>
+                        <?php endif; ?>
+                        <?php foreach ($recentChecks as $check): ?>
+                            <div class="activity-item">
+                                <span class="dot <?= e($check['status']) ?>"></span>
+                                <div>
+                                    <strong><?= e($check['name']) ?></strong>
+                                    <small><?= e($check['checked_at']) ?> / <?= e($check['response_time_ms'] ?? '-') ?> ms</small>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </aside>
+                <?php endif; ?>
+            </section>
+            <?php endif; ?>
+
+            <?php if ($activePage === 'activity'): ?>
+            <section class="activity-page" id="activity">
+                <div class="metric-grid activity-metric-grid" aria-label="Aktivitaet Kennzahlen">
+                    <article class="metric-card">
+                        <span class="metric-label">Checks</span>
+                        <strong><?= e($activityTotal) ?></strong>
+                        <small>letzte gespeicherte Abfragen</small>
+                    </article>
+                    <article class="metric-card accent-ok">
+                        <span class="metric-label">Erfolgreich</span>
+                        <strong><?= e($activityUp) ?></strong>
+                        <small>mit Status online</small>
+                    </article>
+                    <article class="metric-card accent-danger">
+                        <span class="metric-label">Fehlerhaft</span>
+                        <strong><?= e($activityDown) ?></strong>
+                        <small>mit Status offline</small>
+                    </article>
+                    <article class="metric-card">
+                        <span class="metric-label">Avg. Latenz</span>
+                        <strong><?= e($activityAvgLatency) ?> ms</strong>
+                        <small><?= e(count($activityServices)) ?> Services im Protokoll</small>
+                    </article>
+                </div>
+
+                <div class="panel wide-panel activity-log-panel">
+                    <div class="panel-header">
+                        <div>
+                            <p class="eyebrow">Audit Trail</p>
+                            <h2>Abfrage-Protokoll</h2>
+                        </div>
+                        <div class="table-tools activity-tools">
+                            <input type="search" id="activitySearch" placeholder="Protokoll suchen">
+                            <select id="activityStatusFilter" aria-label="Status filtern">
+                                <option value="">Alle Status</option>
+                                <option value="up">Online</option>
+                                <option value="down">Offline</option>
+                            </select>
+                            <select id="activityTypeFilter" aria-label="Typ filtern">
+                                <option value="">Alle Typen</option>
+                                <option value="website">Website</option>
+                                <option value="tcp">Service</option>
+                                <option value="ping">Ping</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="activity-strip">
+                        <div>
+                            <span>Letzte Abfrage</span>
+                            <strong><?= e($activityLastChecked) ?></strong>
+                        </div>
+                        <div>
+                            <span>Treffer</span>
+                            <strong id="activityVisibleCount"><?= e($activityTotal) ?></strong>
+                        </div>
+                    </div>
+                    <div class="table-wrap">
+                        <table class="data-table activity-table" id="activityTable">
+                            <thead>
+                                <tr>
+                                    <th data-sort="server">Service</th>
+                                    <th data-sort="type">Typ</th>
+                                    <th data-sort="status">Status</th>
+                                    <th data-sort="latency">Latenz</th>
+                                    <th data-sort="http">HTTP</th>
+                                    <th data-sort="checked">Zeitpunkt</th>
+                                    <th data-sort="error">Fehler / Antwort</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (empty($activityRows)): ?>
+                                <tr data-status="" data-type="" data-search="noch keine abfragen vorhanden">
+                                    <td colspan="7" class="muted">Noch keine Abfragen vorhanden.</td>
+                                </tr>
+                                <?php endif; ?>
+                                <?php foreach ($activityRows as $check): ?>
+                                <?php
+                                    $checkStatus = (string)($check['status'] ?? 'unknown');
+                                    $checkType = (string)($check['type'] ?? 'website');
+                                    $checkLatency = $check['response_time_ms'] === null ? '-' : (string)$check['response_time_ms'] . ' ms';
+                                    $checkHttp = $check['http_code'] === null ? '-' : (string)$check['http_code'];
+                                    $checkError = trim((string)($check['error_message'] ?? ''));
+                                    $checkMessage = $checkError !== '' ? $checkError : 'OK';
+                                    $checkSearch = strtolower(trim(
+                                        (string)($check['name'] ?? '') . ' ' .
+                                        (string)($check['url'] ?? '') . ' ' .
+                                        $checkType . ' ' .
+                                        $checkStatus . ' ' .
+                                        $checkHttp . ' ' .
+                                        $checkMessage . ' ' .
+                                        (string)($check['checked_at'] ?? '')
+                                    ));
+                                ?>
+                                <tr
+                                    data-status="<?= e($checkStatus) ?>"
+                                    data-type="<?= e($checkType) ?>"
+                                    data-search="<?= e($checkSearch) ?>"
+                                >
+                                    <td>
+                                        <div class="target-cell activity-target">
+                                            <strong><?= e($check['name']) ?></strong>
+                                            <span><?= e($check['url'] ?? '-') ?></span>
+                                            <span>Check #<?= e($check['id'] ?? '-') ?> / Server #<?= e($check['server_id'] ?? '-') ?></span>
+                                        </div>
+                                    </td>
+                                    <td><span class="type-chip"><?= e(strtoupper($checkType)) ?></span></td>
+                                    <td><span class="status-pill <?= e($checkStatus) ?>"><?= e($checkStatus) ?></span></td>
+                                    <td data-value="<?= e($check['response_time_ms'] ?? 0) ?>"><?= e($checkLatency) ?></td>
+                                    <td data-value="<?= e($check['http_code'] ?? 0) ?>"><?= e($checkHttp) ?></td>
+                                    <td data-value="<?= e($check['checked_at'] ?? '') ?>"><?= e($check['checked_at'] ?? '-') ?></td>
+                                    <td data-value="<?= e($checkMessage) ?>">
+                                        <span class="activity-message <?= $checkError !== '' ? 'is-error' : 'is-ok' ?>"><?= e($checkMessage) ?></span>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+            <?php endif; ?>
+
+            <?php if ($activePage === 'settings'): ?>
+            <section class="settings-grid" id="settings">
+                <article class="panel">
+                    <div class="panel-header compact">
+                        <div>
+                            <p class="eyebrow">Mail</p>
+                            <h2>E-Mail Benachrichtigung</h2>
+                        </div>
+                    </div>
+                    <form id="settingsForm" class="form-grid">
+                        <input type="hidden" name="_csrf" value="<?= e($csrf) ?>">
+                        <label class="toggle-line"><input type="checkbox" name="email_enabled" value="1" <?= $settings['email_enabled'] === '1' ? 'checked' : '' ?>> Aktiv</label>
+                        <label>Absender E-Mail<input name="email_from" value="<?= e($settings['email_from']) ?>"></label>
+                        <label>Absender Name<input name="email_from_name" value="<?= e($settings['email_from_name']) ?>"></label>
+                        <label>Standard Empfaenger<input name="email_default_to" value="<?= e($settings['email_default_to']) ?>"></label>
+                        <label>Betreff Prefix<input name="email_subject_prefix" value="<?= e($settings['email_subject_prefix']) ?>"></label>
+                        <label>Warnschwelle fehlgeschlagener Checks<input name="warning_threshold_checks" type="number" min="1" max="20" value="<?= e($settings['warning_threshold_checks']) ?>"></label>
+                        <input type="hidden" name="public_status_enabled" value="<?= e($settings['public_status_enabled']) ?>">
+                        <input type="hidden" name="public_status_title" value="<?= e($settings['public_status_title']) ?>">
+                        <input type="hidden" name="public_status_description" value="<?= e($settings['public_status_description']) ?>">
+                        <input type="hidden" name="public_status_badge" value="<?= e($settings['public_status_badge']) ?>">
+                        <input type="hidden" name="public_status_theme" value="<?= e($settings['public_status_theme']) ?>">
+                        <input type="hidden" name="public_status_accent" value="<?= e($settings['public_status_accent']) ?>">
+                        <input type="hidden" name="public_show_latency" value="<?= e($settings['public_show_latency']) ?>">
+                        <input type="hidden" name="public_show_uptime" value="<?= e($settings['public_show_uptime']) ?>">
+                        <input type="hidden" name="public_show_last_check" value="<?= e($settings['public_show_last_check']) ?>">
+                        <input type="hidden" name="public_show_incidents" value="<?= e($settings['public_show_incidents']) ?>">
+                        <input type="hidden" name="public_footer_note" value="<?= e($settings['public_footer_note']) ?>">
+                        <div class="modal-actions">
+                            <button class="btn primary" type="submit">Einstellungen speichern</button>
+                        </div>
+                    </form>
+                </article>
+
+                <article class="panel">
+                    <div class="panel-header compact">
+                        <div>
+                            <p class="eyebrow">Public</p>
+                            <h2>Status Page</h2>
+                        </div>
+                    </div>
+                    <form id="publicSettingsForm" class="form-grid">
+                        <input type="hidden" name="_csrf" value="<?= e($csrf) ?>">
+                        <label class="toggle-line"><input type="checkbox" name="public_status_enabled" value="1" <?= $settings['public_status_enabled'] === '1' ? 'checked' : '' ?>> Aktiv</label>
+                        <label class="toggle-line"><input type="checkbox" name="public_show_latency" value="1" <?= $settings['public_show_latency'] === '1' ? 'checked' : '' ?>> Latenz anzeigen</label>
+                        <label class="toggle-line"><input type="checkbox" name="public_show_uptime" value="1" <?= $settings['public_show_uptime'] === '1' ? 'checked' : '' ?>> Uptime anzeigen</label>
+                        <label class="toggle-line"><input type="checkbox" name="public_show_last_check" value="1" <?= $settings['public_show_last_check'] === '1' ? 'checked' : '' ?>> Letzten Check anzeigen</label>
+                        <label class="toggle-line"><input type="checkbox" name="public_show_incidents" value="1" <?= $settings['public_show_incidents'] === '1' ? 'checked' : '' ?>> Stoerungen anzeigen</label>
+                        <label>Titel<input name="public_status_title" value="<?= e($settings['public_status_title']) ?>"></label>
+                        <label>Badge / Eyebrow<input name="public_status_badge" value="<?= e($settings['public_status_badge']) ?>"></label>
+                        <label>Beschreibung<input name="public_status_description" value="<?= e($settings['public_status_description']) ?>"></label>
+                        <label>Theme
+                            <select name="public_status_theme">
+                                <option value="dark" <?= $settings['public_status_theme'] === 'dark' ? 'selected' : '' ?>>Dark</option>
+                                <option value="light" <?= $settings['public_status_theme'] === 'light' ? 'selected' : '' ?>>Light</option>
+                            </select>
+                        </label>
+                        <label>Akzentfarbe<input name="public_status_accent" value="<?= e($settings['public_status_accent']) ?>" placeholder="#5dd6a5"></label>
+                        <label>Footer Hinweis<input name="public_footer_note" value="<?= e($settings['public_footer_note']) ?>"></label>
+                        <input type="hidden" name="email_enabled" value="<?= e($settings['email_enabled']) ?>">
+                        <input type="hidden" name="email_from" value="<?= e($settings['email_from']) ?>">
+                        <input type="hidden" name="email_from_name" value="<?= e($settings['email_from_name']) ?>">
+                        <input type="hidden" name="email_default_to" value="<?= e($settings['email_default_to']) ?>">
+                        <input type="hidden" name="email_subject_prefix" value="<?= e($settings['email_subject_prefix']) ?>">
+                        <input type="hidden" name="warning_threshold_checks" value="<?= e($settings['warning_threshold_checks']) ?>">
+                        <div class="modal-actions">
+                            <a class="btn ghost" href="public.php" target="_blank" rel="noopener">Public Page oeffnen</a>
+                            <button class="btn primary" type="submit">Speichern</button>
+                        </div>
+                    </form>
+                </article>
+            </section>
+            <?php endif; ?>
+        </main>
+    </div>
+
+    <div class="modal-backdrop" id="serverModal" aria-hidden="true" style="display:none">
+        <form class="modal-panel" id="serverForm">
+            <input type="hidden" name="_csrf" value="<?= e($csrf) ?>">
+            <input type="hidden" name="id" id="serverId">
+            <div class="modal-header">
+                <h2 id="modalTitle">Neuer Check</h2>
+                <button type="button" class="icon-btn" id="modalCloseButton" data-close-modal aria-label="Schliessen" onclick="var m=document.getElementById('serverModal'); if(m){m.classList.remove('is-open');m.style.display='none';m.setAttribute('aria-hidden','true');} return false;">x</button>
+            </div>
+            <div class="form-grid">
+                <label>Name<input name="name" id="serverName" required maxlength="190"></label>
+                <label>Ziel / URL<input name="url" id="serverUrl" required maxlength="500" placeholder="https://example.com"></label>
+                <label>Typ
+                    <select name="type" id="serverType">
+                        <option value="website">Website</option>
+                        <option value="tcp">TCP Service</option>
+                        <option value="ping">Ping</option>
+                    </select>
+                </label>
+                <div class="service-port-fields" id="servicePortFields">
+                    <label>Port-Auswahl
+                        <select id="serverPortPreset">
+                            <option value="custom">Custom Port</option>
+                            <option value="80">HTTP (80)</option>
+                            <option value="443">HTTPS (443)</option>
+                            <option value="21">FTP (21)</option>
+                            <option value="25">SMTP (25)</option>
+                            <option value="465">SMTP Secure (465)</option>
+                            <option value="110">POP3 (110)</option>
+                            <option value="995">POP3 Secure (995)</option>
+                            <option value="143">IMAP (143)</option>
+                            <option value="993">IMAP over SSL (993)</option>
+                            <option value="22">SSH (22)</option>
+                            <option value="389">LDAP (389)</option>
+                            <option value="3306">MySQL (3306)</option>
+                            <option value="115">SFTP (115)</option>
+                            <option value="43">WHOIS (43)</option>
+                            <option selected value="53">BIND (53)</option>
+                            <option value="3389">RDP (3389)</option>
+                        </select>
+                    </label>
+                    <label id="serverCustomPortWrap">Custom Port<input name="port" id="serverPort" type="number" min="1" max="65535"></label>
+                </div>
+                <label>Methode
+                    <select name="method" id="serverMethod">
+                        <option value="GET">GET</option>
+                        <option value="HEAD">HEAD</option>
+                    </select>
+                </label>
+                <label>Statusregel<input name="expected_status" id="serverExpectedStatus" value="200-399"></label>
+                <label>Text muss enthalten<input name="expected_text" id="serverExpectedText" maxlength="255"></label>
+                <label>Timeout<input name="timeout_seconds" id="serverTimeout" type="number" min="1" max="60" value="10"></label>
+                <label class="toggle-line"><input name="enabled" id="serverEnabled" type="checkbox" value="1" checked> Aktiv</label>
+                <label class="toggle-line"><input name="public_visible" id="serverPublicVisible" type="checkbox" value="1" checked> Public sichtbar</label>
+                <label class="toggle-line"><input name="notify_enabled" id="serverNotifyEnabled" type="checkbox" value="1"> E-Mail aktiv</label>
+                <label>Empfaenger<input name="notify_email" id="serverNotifyEmail" maxlength="190"></label>
+                <label class="toggle-line"><input name="notify_on_down" id="serverNotifyOnDown" type="checkbox" value="1" checked> Bei Ausfall</label>
+                <label class="toggle-line"><input name="notify_on_recovery" id="serverNotifyOnRecovery" type="checkbox" value="1" checked> Bei Erholung</label>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn ghost" data-close-modal onclick="var m=document.getElementById('serverModal'); if(m){m.classList.remove('is-open');m.style.display='none';m.setAttribute('aria-hidden','true');} return false;">Abbrechen</button>
+                <button type="submit" class="btn primary">Speichern</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="modal-backdrop" id="detailsModal" aria-hidden="true" style="display:none">
+        <div class="modal-panel details-panel">
+            <div class="modal-header">
+                <h2 id="detailsTitle">Details</h2>
+                <button type="button" class="icon-btn" data-close-details aria-label="Schliessen">x</button>
+            </div>
+            <div id="detailsBody" class="details-body"></div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast" hidden></div>
+    <script type="application/json" id="chartData"><?= json_encode($chartData, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?></script>
+    <script src="assets/app.js?v=<?= e((string)(@filemtime(APP_ROOT . '/assets/app.js') ?: random_int(100000, 999999))) ?>"></script>
+</body>
+</html>
