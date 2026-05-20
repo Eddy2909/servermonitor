@@ -17,7 +17,6 @@ $assetVersion = bin2hex(random_bytes(6));
     <main class="public-shell pro-status-shell">
         <header class="pro-status-hero">
             <div class="pro-status-copy">
-                <div class="brand-mark">PSM</div>
                 <p class="eyebrow"><?= e($settings['public_status_badge']) ?></p>
                 <h1><?= e($settings['public_status_title']) ?></h1>
                 <p class="muted"><?= e($settings['public_status_description']) ?></p>

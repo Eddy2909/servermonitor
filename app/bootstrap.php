@@ -34,16 +34,12 @@ function load_config(bool $required = true): array
 
     $config = require $path;
     if (!is_array($config)) {
-        $config = legacy_config_from_constants();
-    }
-
-    if (!is_array($config)) {
         throw new RuntimeException('config.php must return an array. Copy the current config.php.sample to config.php and fill in the values.');
     }
 
     $defaults = [
         'app' => [
-            'name' => 'PHP Server Monitor',
+            'name' => 'Server Monitor',
             'base_url' => '',
             'debug' => false,
             'timezone' => 'UTC',
@@ -57,7 +53,7 @@ function load_config(bool $required = true): array
             'prefix' => 'monitor_',
         ],
         'security' => [
-            'session_name' => 'psm_admin',
+            'session_name' => 'server_monitor_admin',
             'session_lifetime' => 1800,
             'password_cost' => 12,
         ],
@@ -67,34 +63,12 @@ function load_config(bool $required = true): array
         ],
     ];
 
-    return array_replace_recursive($defaults, $config);
-}
-
-function legacy_config_from_constants(): ?array
-{
-    if (!defined('PSM_DB_NAME') || !defined('PSM_DB_USER') || !defined('PSM_DB_HOST')) {
-        return null;
+    $merged = array_replace_recursive($defaults, $config);
+    if ((string)($merged['app']['name'] ?? '') === 'PHP Server ' . 'Monitor') {
+        $merged['app']['name'] = 'Server Monitor';
     }
 
-    return [
-        'app' => [
-            'name' => 'PHP Server Monitor',
-            'base_url' => defined('PSM_BASE_URL') ? (string)PSM_BASE_URL : '',
-            'debug' => defined('PSM_DEBUG') ? (bool)PSM_DEBUG : false,
-            'timezone' => date_default_timezone_get() ?: 'UTC',
-        ],
-        'db' => [
-            'host' => (string)PSM_DB_HOST,
-            'port' => defined('PSM_DB_PORT') && PSM_DB_PORT !== '' ? (int)PSM_DB_PORT : 3306,
-            'name' => (string)PSM_DB_NAME,
-            'user' => (string)PSM_DB_USER,
-            'pass' => defined('PSM_DB_PASS') ? (string)PSM_DB_PASS : '',
-            'prefix' => defined('PSM_DB_PREFIX') ? (string)PSM_DB_PREFIX : 'monitor_',
-        ],
-        'cron' => [
-            'token' => defined('PSM_WEBCRON_KEY') ? (string)PSM_WEBCRON_KEY : '',
-        ],
-    ];
+    return $merged;
 }
 
 function configure_runtime(array $config): void
@@ -111,7 +85,7 @@ function start_secure_session(array $security = []): void
         return;
     }
 
-    $name = (string)($security['session_name'] ?? 'psm_admin');
+    $name = (string)($security['session_name'] ?? 'server_monitor_admin');
     session_name($name);
     session_set_cookie_params([
         'lifetime' => 0,

@@ -32,6 +32,9 @@ if (!empty($publicPages[0]['token'])) {
     $firstPublicPageUrl = 'status/' . (string)$publicPages[0]['token'];
 }
 $assetVersion = bin2hex(random_bytes(6));
+$cronUrl = 'cron/status.cron.php?token=' . (string)($settings['cron_token'] ?? '');
+$cronStatus = (string)($cronHealth['status'] ?? 'unknown');
+$cronStatusLabel = (string)($cronHealth['label'] ?? 'Cronstatus unklar');
 ?>
 <!doctype html>
 <html lang="de">
@@ -46,7 +49,6 @@ $assetVersion = bin2hex(random_bytes(6));
     <div class="app-shell">
         <aside class="sidebar">
             <div class="brand-block">
-                <div class="brand-mark">PSM</div>
                 <div>
                     <strong><?= e($appName) ?></strong>
                     <span>Monitor Console</span>
@@ -73,7 +75,7 @@ $assetVersion = bin2hex(random_bytes(6));
                 </div>
                 <div class="top-actions">
                     <span class="user-pill"><?= e($username) ?></span>
-                    <button type="button" class="btn primary" data-open-modal onclick="var m=document.getElementById('serverModal'); if(window.psmOpenModal){window.psmOpenModal(null);} else if(m){m.classList.add('is-open');m.style.display='grid';m.setAttribute('aria-hidden','false');} return false;">Neuer Check</button>
+                    <button type="button" class="btn primary" data-open-modal onclick="var m=document.getElementById('serverModal'); if(window.serverMonitorOpenModal){window.serverMonitorOpenModal(null);} else if(m){m.classList.add('is-open');m.style.display='grid';m.setAttribute('aria-hidden','false');} return false;">Neuer Check</button>
                 </div>
             </header>
 
@@ -323,6 +325,7 @@ $assetVersion = bin2hex(random_bytes(6));
                     </div>
                     <form id="settingsForm" class="form-grid">
                         <input type="hidden" name="_csrf" value="<?= e($csrf) ?>">
+                        <input type="hidden" name="email_enabled" value="0">
                         <label class="toggle-line"><input type="checkbox" name="email_enabled" value="1" <?= $settings['email_enabled'] === '1' ? 'checked' : '' ?>> Aktiv</label>
                         <label>Absender E-Mail<input name="email_from" value="<?= e($settings['email_from']) ?>"></label>
                         <label>Absender Name<input name="email_from_name" value="<?= e($settings['email_from_name']) ?>"></label>
@@ -342,6 +345,57 @@ $assetVersion = bin2hex(random_bytes(6));
                         <input type="hidden" name="public_footer_note" value="<?= e($settings['public_footer_note']) ?>">
                         <div class="modal-actions">
                             <button class="btn primary" type="submit">Einstellungen speichern</button>
+                        </div>
+                    </form>
+                </article>
+
+                <article class="panel cron-panel">
+                    <div class="panel-header compact">
+                        <div>
+                            <p class="eyebrow">Automation</p>
+                            <h2>Cronjob</h2>
+                        </div>
+                        <span class="status-pill <?= e($cronStatus) ?>"><?= e($cronStatusLabel) ?></span>
+                    </div>
+                    <div class="cron-summary">
+                        <div>
+                            <span>Letzter Lauf</span>
+                            <strong><?= e($settings['cron_last_finished_at'] ?: '-') ?></strong>
+                        </div>
+                        <div>
+                            <span>Geprueft</span>
+                            <strong><?= e($settings['cron_last_checked_count'] ?? '0') ?></strong>
+                        </div>
+                        <div>
+                            <span>Fehler</span>
+                            <strong><?= e($settings['cron_last_error_count'] ?? '0') ?></strong>
+                        </div>
+                        <div>
+                            <span>Dauer</span>
+                            <strong><?= e($settings['cron_last_duration_ms'] ?? '0') ?> ms</strong>
+                        </div>
+                    </div>
+                    <p class="muted"><?= e($settings['cron_last_message'] ?: 'Noch kein Laufprotokoll vorhanden.') ?></p>
+                    <form id="cronSettingsForm" class="form-grid">
+                        <input type="hidden" name="_csrf" value="<?= e($csrf) ?>">
+                        <input type="hidden" name="cron_enabled" value="0">
+                        <input type="hidden" name="cron_maintenance_enabled" value="0">
+                        <label class="toggle-line"><input type="checkbox" name="cron_enabled" value="1" <?= $settings['cron_enabled'] === '1' ? 'checked' : '' ?>> Cron aktiv</label>
+                        <label>Cron-URL<input id="cronUrl" value="<?= e($cronUrl) ?>" readonly></label>
+                        <label>Cron-Token<input name="cron_token" id="cronToken" value="<?= e($settings['cron_token']) ?>"></label>
+                        <label>Lock-Dauer Sekunden<input name="cron_lock_seconds" type="number" min="30" max="3600" value="<?= e($settings['cron_lock_seconds']) ?>"></label>
+                        <label>Max. Checks pro Lauf<input name="cron_max_checks_per_run" type="number" min="1" max="500" value="<?= e($settings['cron_max_checks_per_run']) ?>"></label>
+                        <label>Retries je Fehler<input name="cron_retry_attempts" type="number" min="0" max="5" value="<?= e($settings['cron_retry_attempts']) ?>"></label>
+                        <label>Retry-Pause Sekunden<input name="cron_retry_delay_seconds" type="number" min="0" max="60" value="<?= e($settings['cron_retry_delay_seconds']) ?>"></label>
+                        <label>Default Timeout Sekunden<input name="cron_default_timeout_seconds" type="number" min="1" max="60" value="<?= e($settings['cron_default_timeout_seconds']) ?>"></label>
+                        <label>Max. Alerts pro Lauf<input name="cron_alert_limit_per_run" type="number" min="0" max="500" value="<?= e($settings['cron_alert_limit_per_run']) ?>" placeholder="0 = unbegrenzt"></label>
+                        <label>Health Warnung nach Minuten<input name="cron_health_grace_minutes" type="number" min="1" max="1440" value="<?= e($settings['cron_health_grace_minutes']) ?>"></label>
+                        <label class="toggle-line"><input type="checkbox" name="cron_maintenance_enabled" value="1" <?= $settings['cron_maintenance_enabled'] === '1' ? 'checked' : '' ?>> Wartungsfenster pausiert Alerts</label>
+                        <label>Wartung Start<input name="cron_maintenance_start" type="time" value="<?= e($settings['cron_maintenance_start']) ?>"></label>
+                        <label>Wartung Ende<input name="cron_maintenance_end" type="time" value="<?= e($settings['cron_maintenance_end']) ?>"></label>
+                        <div class="modal-actions">
+                            <button class="btn ghost" type="button" id="rotateCronToken">Token rotieren</button>
+                            <button class="btn primary" type="submit">Cron speichern</button>
                         </div>
                     </form>
                 </article>
@@ -487,7 +541,8 @@ $assetVersion = bin2hex(random_bytes(6));
                 </label>
                 <label>Statusregel<input name="expected_status" id="serverExpectedStatus" value="200-399"></label>
                 <label>Text muss enthalten<input name="expected_text" id="serverExpectedText" maxlength="255"></label>
-                <label>Timeout<input name="timeout_seconds" id="serverTimeout" type="number" min="1" max="60" value="10"></label>
+                <label>Timeout<input name="timeout_seconds" id="serverTimeout" type="number" min="1" max="60" value="<?= e($settings['cron_default_timeout_seconds'] ?? '10') ?>" data-default="<?= e($settings['cron_default_timeout_seconds'] ?? '10') ?>"></label>
+                <label>Check-Intervall Minuten<input name="check_interval_minutes" id="serverCheckInterval" type="number" min="1" max="1440" value="5"></label>
                 <label class="toggle-line"><input name="enabled" id="serverEnabled" type="checkbox" value="1" checked> Aktiv</label>
                 <label class="toggle-line"><input name="public_visible" id="serverPublicVisible" type="checkbox" value="1" checked> Public sichtbar</label>
                 <label class="toggle-line"><input name="notify_enabled" id="serverNotifyEnabled" type="checkbox" value="1"> E-Mail aktiv</label>

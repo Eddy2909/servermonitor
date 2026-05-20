@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 return [
     'app' => [
-        'name' => 'PHP Server Monitor',
+        'name' => 'Server Monitor',
         'base_url' => '',
         'debug' => false,
         'timezone' => 'Europe/Berlin',
@@ -19,7 +19,7 @@ return [
     ],
 
     'security' => [
-        'session_name' => 'psm_admin',
+        'session_name' => 'server_monitor_admin',
         'session_lifetime' => 1800,
         'password_cost' => 12,
     ],

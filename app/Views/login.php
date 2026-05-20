@@ -9,7 +9,6 @@
 <body class="auth-body">
     <main class="auth-shell">
         <section class="auth-panel">
-            <div class="brand-mark">PSM</div>
             <p class="eyebrow">Secure Admin Console</p>
             <h1><?= e($appName) ?></h1>
             <p class="muted">Melde dich an, um Verfuegbarkeit, Latenz und Service-Status zu steuern.</p>

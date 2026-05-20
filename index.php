@@ -62,6 +62,11 @@ try {
     }
 
     $auth->requireLogin();
+    $settings = $repo->settings();
+    if ((string)($settings['cron_token'] ?? '') === '') {
+        $settings['cron_token'] = (string)($config['cron']['token'] ?? '');
+    }
+
     echo View::render('dashboard.php', [
         'appName' => $appName,
         'username' => $auth->username(),
@@ -72,7 +77,9 @@ try {
         'recentChecks' => $repo->recentChecks(),
         'activityChecks' => $repo->activityChecks(),
         'notifications' => $repo->notificationLog(null, 12),
-        'settings' => $repo->settings(),
+        'settings' => $settings,
+        'cronHealth' => $repo->cronHealth($settings),
+        'cronInMaintenance' => $repo->cronInMaintenance($settings),
         'publicPages' => $repo->publicPages(),
         'chartData' => $repo->chartData(),
     ]);
@@ -105,6 +112,11 @@ function handle_action(string $action, ServerRepository $repo): void
         if ($action === 'settings.save') {
             $settings = $repo->saveSettings($_POST);
             json_response(['ok' => true, 'settings' => $settings, 'message' => 'Einstellungen gespeichert.']);
+        }
+
+        if ($action === 'cron.token.rotate') {
+            $token = $repo->rotateCronToken();
+            json_response(['ok' => true, 'token' => $token, 'message' => 'Cron-Token neu erzeugt.']);
         }
 
         if ($action === 'public_page.save') {

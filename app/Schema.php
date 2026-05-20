@@ -19,6 +19,7 @@ final class Schema
         self::addColumn($db, 'servers', 'notify_email', '`notify_email` VARCHAR(190) NULL AFTER `notify_enabled`');
         self::addColumn($db, 'servers', 'notify_on_down', '`notify_on_down` TINYINT(1) NOT NULL DEFAULT 1 AFTER `notify_email`');
         self::addColumn($db, 'servers', 'notify_on_recovery', '`notify_on_recovery` TINYINT(1) NOT NULL DEFAULT 1 AFTER `notify_on_down`');
+        self::addColumn($db, 'servers', 'check_interval_minutes', '`check_interval_minutes` INT UNSIGNED NOT NULL DEFAULT 5 AFTER `timeout_seconds`');
         self::addColumn($db, 'servers', 'last_notified_status', "`last_notified_status` ENUM('unknown','up','down') NOT NULL DEFAULT 'unknown' AFTER `last_checked_at`");
 
         $db->pdo()->exec("CREATE TABLE IF NOT EXISTS `{$db->prefix()}notifications` (
@@ -95,6 +96,7 @@ final class Schema
                 `expected_status` VARCHAR(80) NOT NULL DEFAULT '200-399',
                 `expected_text` VARCHAR(255) NOT NULL DEFAULT '',
                 `timeout_seconds` TINYINT UNSIGNED NOT NULL DEFAULT 10,
+                `check_interval_minutes` INT UNSIGNED NOT NULL DEFAULT 5,
                 `enabled` TINYINT(1) NOT NULL DEFAULT 1,
                 `public_visible` TINYINT(1) NOT NULL DEFAULT 1,
                 `notify_enabled` TINYINT(1) NOT NULL DEFAULT 0,

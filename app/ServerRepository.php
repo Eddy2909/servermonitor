@@ -28,6 +28,20 @@ final class ServerRepository
         );
     }
 
+    public function dueForCron(int $limit): array
+    {
+        return $this->db->fetchAll(
+            'SELECT * FROM ' . $this->db->table('servers') . '
+             WHERE enabled = 1
+               AND (
+                    last_checked_at IS NULL
+                    OR TIMESTAMPDIFF(MINUTE, last_checked_at, NOW()) >= check_interval_minutes
+               )
+             ORDER BY last_checked_at IS NULL DESC, last_checked_at ASC, name ASC
+             LIMIT ' . max(1, min(500, $limit))
+        );
+    }
+
     public function publicServers(): array
     {
         return $this->db->fetchAll(
@@ -129,7 +143,8 @@ final class ServerRepository
                 'UPDATE ' . $this->db->table('servers') . '
                  SET name = :name, url = :url, type = :type, port = :port, method = :method,
                      expected_status = :expected_status, expected_text = :expected_text,
-                     timeout_seconds = :timeout_seconds, enabled = :enabled, public_visible = :public_visible,
+                     timeout_seconds = :timeout_seconds, check_interval_minutes = :check_interval_minutes,
+                     enabled = :enabled, public_visible = :public_visible,
                      notify_enabled = :notify_enabled, notify_email = :notify_email,
                      notify_on_down = :notify_on_down, notify_on_recovery = :notify_on_recovery,
                      updated_at = NOW()
@@ -141,9 +156,9 @@ final class ServerRepository
 
         $this->db->execute(
             'INSERT INTO ' . $this->db->table('servers') . '
-             (name, url, type, port, method, expected_status, expected_text, timeout_seconds, enabled,
+             (name, url, type, port, method, expected_status, expected_text, timeout_seconds, check_interval_minutes, enabled,
               public_visible, notify_enabled, notify_email, notify_on_down, notify_on_recovery, created_at, updated_at)
-             VALUES (:name, :url, :type, :port, :method, :expected_status, :expected_text, :timeout_seconds, :enabled,
+             VALUES (:name, :url, :type, :port, :method, :expected_status, :expected_text, :timeout_seconds, :check_interval_minutes, :enabled,
               :public_visible, :notify_enabled, :notify_email, :notify_on_down, :notify_on_recovery, NOW(), NOW())',
             $data
         );
@@ -377,7 +392,7 @@ final class ServerRepository
         $defaults = [
             'email_enabled' => '0',
             'email_from' => 'monitor@example.org',
-            'email_from_name' => 'PHP Server Monitor',
+            'email_from_name' => 'Server Monitor',
             'email_default_to' => '',
             'email_subject_prefix' => '[Monitor]',
             'public_status_enabled' => '1',
@@ -392,6 +407,25 @@ final class ServerRepository
             'public_show_incidents' => '1',
             'public_footer_note' => '',
             'warning_threshold_checks' => '3',
+            'cron_enabled' => '1',
+            'cron_token' => '',
+            'cron_lock_seconds' => '300',
+            'cron_max_checks_per_run' => '50',
+            'cron_retry_attempts' => '1',
+            'cron_retry_delay_seconds' => '2',
+            'cron_default_timeout_seconds' => '10',
+            'cron_alert_limit_per_run' => '20',
+            'cron_health_grace_minutes' => '10',
+            'cron_maintenance_enabled' => '0',
+            'cron_maintenance_start' => '',
+            'cron_maintenance_end' => '',
+            'cron_last_started_at' => '',
+            'cron_last_finished_at' => '',
+            'cron_last_duration_ms' => '0',
+            'cron_last_checked_count' => '0',
+            'cron_last_error_count' => '0',
+            'cron_last_status' => 'unknown',
+            'cron_last_message' => '',
         ];
 
         $rows = $this->db->fetchAll('SELECT name, value FROM ' . $this->db->table('settings'));
@@ -422,15 +456,57 @@ final class ServerRepository
             'public_show_incidents',
             'public_footer_note',
             'warning_threshold_checks',
+            'cron_enabled',
+            'cron_token',
+            'cron_lock_seconds',
+            'cron_max_checks_per_run',
+            'cron_retry_attempts',
+            'cron_retry_delay_seconds',
+            'cron_default_timeout_seconds',
+            'cron_alert_limit_per_run',
+            'cron_health_grace_minutes',
+            'cron_maintenance_enabled',
+            'cron_maintenance_start',
+            'cron_maintenance_end',
         ];
 
         foreach ($allowed as $key) {
+            if (!array_key_exists($key, $input)) {
+                continue;
+            }
             $value = (string)($input[$key] ?? '');
-            if (in_array($key, ['email_enabled', 'public_status_enabled', 'public_show_latency', 'public_show_uptime', 'public_show_last_check', 'public_show_incidents'], true)) {
+            if (in_array($key, ['email_enabled', 'public_status_enabled', 'public_show_latency', 'public_show_uptime', 'public_show_last_check', 'public_show_incidents', 'cron_enabled', 'cron_maintenance_enabled'], true)) {
                 $value = !empty($input[$key]) ? '1' : '0';
             }
             if ($key === 'warning_threshold_checks') {
                 $value = (string)max(1, min(20, (int)$value));
+            }
+            if (in_array($key, ['cron_lock_seconds'], true)) {
+                $value = (string)max(30, min(3600, (int)$value));
+            }
+            if (in_array($key, ['cron_max_checks_per_run'], true)) {
+                $value = (string)max(1, min(500, (int)$value));
+            }
+            if (in_array($key, ['cron_retry_attempts'], true)) {
+                $value = (string)max(0, min(5, (int)$value));
+            }
+            if (in_array($key, ['cron_retry_delay_seconds'], true)) {
+                $value = (string)max(0, min(60, (int)$value));
+            }
+            if (in_array($key, ['cron_default_timeout_seconds'], true)) {
+                $value = (string)max(1, min(60, (int)$value));
+            }
+            if (in_array($key, ['cron_alert_limit_per_run'], true)) {
+                $value = (string)max(0, min(500, (int)$value));
+            }
+            if (in_array($key, ['cron_health_grace_minutes'], true)) {
+                $value = (string)max(1, min(1440, (int)$value));
+            }
+            if (in_array($key, ['cron_maintenance_start', 'cron_maintenance_end'], true) && $value !== '' && !preg_match('/^\d{2}:\d{2}$/', $value)) {
+                $value = '';
+            }
+            if ($key === 'cron_token' && $value !== '' && !preg_match('/^[a-zA-Z0-9_-]{20,160}$/', $value)) {
+                $value = '';
             }
             if ($key === 'public_status_theme' && !in_array($value, ['dark', 'light'], true)) {
                 $value = 'dark';
@@ -442,6 +518,13 @@ final class ServerRepository
         }
 
         return $this->settings();
+    }
+
+    public function rotateCronToken(): string
+    {
+        $token = bin2hex(random_bytes(24));
+        $this->setSetting('cron_token', $token);
+        return $token;
     }
 
     public function notificationLog(?int $serverId = null, int $limit = 20): array
@@ -527,6 +610,66 @@ final class ServerRepository
     public function releaseCronLock(): void
     {
         $this->setSetting('cron_running_until', '0');
+    }
+
+    public function markCronStarted(): void
+    {
+        $this->setSetting('cron_last_started_at', date('Y-m-d H:i:s'));
+        $this->setSetting('cron_last_status', 'running');
+        $this->setSetting('cron_last_message', 'Cron running.');
+    }
+
+    public function markCronFinished(string $status, int $durationMs, int $checked, int $errors, string $message): void
+    {
+        $this->setSetting('cron_last_finished_at', date('Y-m-d H:i:s'));
+        $this->setSetting('cron_last_duration_ms', (string)max(0, $durationMs));
+        $this->setSetting('cron_last_checked_count', (string)max(0, $checked));
+        $this->setSetting('cron_last_error_count', (string)max(0, $errors));
+        $this->setSetting('cron_last_status', $status);
+        $this->setSetting('cron_last_message', $message);
+    }
+
+    public function cronHealth(array $settings): array
+    {
+        $last = (string)($settings['cron_last_finished_at'] ?? '');
+        if ($last === '') {
+            return ['status' => 'unknown', 'label' => 'Noch kein Cronlauf', 'minutes' => null];
+        }
+
+        $lastTime = strtotime($last);
+        if ($lastTime === false) {
+            return ['status' => 'unknown', 'label' => 'Cronstatus unklar', 'minutes' => null];
+        }
+
+        $minutes = (int)floor((time() - $lastTime) / 60);
+        $grace = max(1, (int)($settings['cron_health_grace_minutes'] ?? 10));
+        if ($minutes > $grace) {
+            return ['status' => 'down', 'label' => 'Cron ueberfaellig', 'minutes' => $minutes];
+        }
+
+        return ['status' => 'up', 'label' => 'Cron aktuell', 'minutes' => $minutes];
+    }
+
+    public function cronInMaintenance(array $settings): bool
+    {
+        if ((string)($settings['cron_maintenance_enabled'] ?? '0') !== '1') {
+            return false;
+        }
+
+        $start = (string)($settings['cron_maintenance_start'] ?? '');
+        $end = (string)($settings['cron_maintenance_end'] ?? '');
+        if (!preg_match('/^\d{2}:\d{2}$/', $start) || !preg_match('/^\d{2}:\d{2}$/', $end)) {
+            return false;
+        }
+
+        $now = (int)date('Hi');
+        $startValue = (int)str_replace(':', '', $start);
+        $endValue = (int)str_replace(':', '', $end);
+        if ($startValue <= $endValue) {
+            return $now >= $startValue && $now <= $endValue;
+        }
+
+        return $now >= $startValue || $now <= $endValue;
     }
 
     private function uptimeScore(int $serverId): float
@@ -691,6 +834,7 @@ final class ServerRepository
             'expected_status' => trim((string)($input['expected_status'] ?? '200-399')),
             'expected_text' => trim((string)($input['expected_text'] ?? '')),
             'timeout_seconds' => max(1, min(60, (int)($input['timeout_seconds'] ?? 10))),
+            'check_interval_minutes' => max(1, min(1440, (int)($input['check_interval_minutes'] ?? 5))),
             'enabled' => !empty($input['enabled']) ? 1 : 0,
             'public_visible' => !empty($input['public_visible']) ? 1 : 0,
             'notify_enabled' => !empty($input['notify_enabled']) ? 1 : 0,

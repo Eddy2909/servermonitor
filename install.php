@@ -103,7 +103,6 @@ function admin_exists(Database $db): bool
 <body class="auth-body">
     <main class="auth-shell">
         <section class="auth-panel">
-            <div class="brand-mark">PSM</div>
             <p class="eyebrow">Setup</p>
             <h1>Installation</h1>
 

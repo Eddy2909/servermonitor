@@ -13,6 +13,10 @@
     var customPortWrap = document.getElementById('serverCustomPortWrap');
     var serverPort = document.getElementById('serverPort');
     var settingsForm = document.getElementById('settingsForm');
+    var cronSettingsForm = document.getElementById('cronSettingsForm');
+    var rotateCronToken = document.getElementById('rotateCronToken');
+    var cronToken = document.getElementById('cronToken');
+    var cronUrl = document.getElementById('cronUrl');
     var toast = document.getElementById('toast');
     var sortState = { index: null, dir: 1 };
 
@@ -249,7 +253,9 @@
         fill('serverMethod', row ? row.getAttribute('data-method') : 'GET');
         fill('serverExpectedStatus', row ? row.getAttribute('data-expected-status') : '200-399');
         fill('serverExpectedText', row ? row.getAttribute('data-expected-text') : '');
-        fill('serverTimeout', row ? row.getAttribute('data-timeout') : '10');
+        var timeoutField = document.getElementById('serverTimeout');
+        fill('serverTimeout', row ? row.getAttribute('data-timeout') : (timeoutField ? timeoutField.getAttribute('data-default') : '10'));
+        fill('serverCheckInterval', row ? row.getAttribute('data-check-interval') : '5');
         check('serverEnabled', !row || row.getAttribute('data-enabled') === '1');
         check('serverPublicVisible', !row || row.getAttribute('data-public-visible') === '1');
         check('serverNotifyEnabled', row && row.getAttribute('data-notify-enabled') === '1');
@@ -273,8 +279,8 @@
         return false;
     }
 
-    window.psmOpenModal = openModal;
-    window.psmCloseModal = closeModal;
+    window.serverMonitorOpenModal = openModal;
+    window.serverMonitorCloseModal = closeModal;
 
     if (modal) {
         closeModal();
@@ -418,6 +424,29 @@
         settingsForm.addEventListener('submit', function (event) {
             event.preventDefault();
             submitSettings(settingsForm);
+        });
+    }
+
+    if (cronSettingsForm) {
+        cronSettingsForm.addEventListener('submit', function (event) {
+            event.preventDefault();
+            submitSettings(cronSettingsForm);
+        });
+    }
+
+    if (rotateCronToken) {
+        rotateCronToken.addEventListener('click', function () {
+            post('cron.token.rotate', new FormData()).then(function (payload) {
+                if (cronToken) {
+                    cronToken.value = payload.token || '';
+                }
+                if (cronUrl && payload.token) {
+                    cronUrl.value = cronUrl.value.replace(/token=[^&]*/, 'token=' + encodeURIComponent(payload.token));
+                }
+                showToast(payload.message || 'Cron-Token neu erzeugt.');
+            }).catch(function (error) {
+                showToast(error.message);
+            });
         });
     }
 
@@ -652,33 +681,71 @@
         var ctx = setup.ctx;
         var width = setup.width;
         var height = setup.height;
+        var area = { left: 50, right: 16, top: 16, bottom: 34 };
+        var plotWidth = Math.max(1, width - area.left - area.right);
+        var plotHeight = Math.max(1, height - area.top - area.bottom);
         ctx.clearRect(0, 0, width, height);
-        ctx.strokeStyle = '#263244';
-        ctx.lineWidth = 1;
-        for (var g = 0; g < 4; g += 1) {
-            var y = 18 + g * ((height - 34) / 3);
-            ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(width, y);
-            ctx.stroke();
-        }
         var points = data.filter(function (row) {
-            return row.response_time_ms !== null;
+            return row.response_time_ms !== null && row.response_time_ms !== undefined && row.response_time_ms !== '';
         }).slice(-40);
         if (!points.length) {
             ctx.fillStyle = '#95a3b8';
             ctx.fillText('Noch keine Daten', 12, 28);
+            canvas.__serverMonitorChartPoints = [];
+            setupChartHover(canvas);
             return;
         }
-        var max = Math.max.apply(null, points.map(function (row) {
+        var rawMax = Math.max.apply(null, points.map(function (row) {
             return Number(row.response_time_ms) || 0;
         })) || 1;
+        var max = niceMax(rawMax);
+        var chartPoints = [];
+
+        ctx.font = '11px Inter, sans-serif';
+        ctx.textBaseline = 'middle';
+        ctx.strokeStyle = '#263244';
+        ctx.fillStyle = '#95a3b8';
+        ctx.lineWidth = 1;
+
+        for (var g = 0; g <= 4; g += 1) {
+            var value = max - (max / 4) * g;
+            var y = area.top + (plotHeight / 4) * g;
+            ctx.beginPath();
+            ctx.moveTo(area.left, y);
+            ctx.lineTo(width - area.right, y);
+            ctx.stroke();
+            ctx.textAlign = 'right';
+            ctx.fillText(String(Math.round(value)) + ' ms', area.left - 8, y);
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(area.left, area.top);
+        ctx.lineTo(area.left, area.top + plotHeight);
+        ctx.lineTo(width - area.right, area.top + plotHeight);
+        ctx.stroke();
+
+        ctx.textAlign = 'left';
+        ctx.fillText('ms', area.left, 8);
+        ctx.textAlign = 'right';
+        ctx.fillText('Zeit', width - area.right, height - 8);
+
+        drawTimeLabel(ctx, points[0], area.left, height - 18, 'left');
+        drawTimeLabel(ctx, points[Math.floor(points.length / 2)], area.left + plotWidth / 2, height - 18, 'center');
+        drawTimeLabel(ctx, points[points.length - 1], width - area.right, height - 18, 'right');
+
         ctx.strokeStyle = '#5dd6a5';
         ctx.lineWidth = 2;
         ctx.beginPath();
         points.forEach(function (row, index) {
-            var x = points.length === 1 ? 0 : index * (width / (points.length - 1));
-            var y = height - 16 - ((Number(row.response_time_ms) || 0) / max) * (height - 34);
+            var x = area.left + (points.length === 1 ? plotWidth / 2 : index * (plotWidth / (points.length - 1)));
+            var y = area.top + plotHeight - ((Number(row.response_time_ms) || 0) / max) * plotHeight;
+            chartPoints.push({
+                x: x,
+                y: y,
+                latency: Number(row.response_time_ms) || 0,
+                checkedAt: row.checked_at || '',
+                name: row.name || ''
+            });
             if (index === 0) {
                 ctx.moveTo(x, y);
             } else {
@@ -686,6 +753,16 @@
             }
         });
         ctx.stroke();
+
+        ctx.fillStyle = '#5dd6a5';
+        chartPoints.forEach(function (point) {
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        canvas.__serverMonitorChartPoints = chartPoints;
+        setupChartHover(canvas);
     }
 
     function drawStatusChart(canvas, data) {
@@ -696,24 +773,137 @@
         var ctx = setup.ctx;
         var width = setup.width;
         var height = setup.height;
+        var area = { left: 42, right: 16, top: 16, bottom: 30 };
+        var plotHeight = Math.max(1, height - area.top - area.bottom);
         var up = data.filter(function (row) { return row.status === 'up'; }).length;
         var down = data.filter(function (row) { return row.status === 'down'; }).length;
         var total = Math.max(1, up + down);
+        var max = niceMax(Math.max(up, down, 1));
         var bars = [
             { label: 'Online', value: up, color: '#5dd6a5' },
             { label: 'Offline', value: down, color: '#ff6b78' }
         ];
         ctx.clearRect(0, 0, width, height);
+        ctx.font = '11px Inter, sans-serif';
+        ctx.strokeStyle = '#263244';
+        ctx.fillStyle = '#95a3b8';
+        ctx.lineWidth = 1;
+        for (var g = 0; g <= 4; g += 1) {
+            var value = max - (max / 4) * g;
+            var y = area.top + (plotHeight / 4) * g;
+            ctx.beginPath();
+            ctx.moveTo(area.left, y);
+            ctx.lineTo(width - area.right, y);
+            ctx.stroke();
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(String(Math.round(value)), area.left - 8, y);
+        }
+        ctx.beginPath();
+        ctx.moveTo(area.left, area.top);
+        ctx.lineTo(area.left, area.top + plotHeight);
+        ctx.lineTo(width - area.right, area.top + plotHeight);
+        ctx.stroke();
+        ctx.textAlign = 'left';
+        ctx.fillText('Checks', area.left, 8);
         bars.forEach(function (bar, index) {
-            var barHeight = (bar.value / total) * (height - 45);
-            var x = 32 + index * 110;
-            var y = height - 24 - barHeight;
+            var barHeight = (bar.value / max) * plotHeight;
+            var x = area.left + 32 + index * 110;
+            var y = area.top + plotHeight - barHeight;
             ctx.fillStyle = bar.color;
             ctx.fillRect(x, y, 58, barHeight);
             ctx.fillStyle = '#edf3fb';
             ctx.fillText(String(bar.value), x + 20, y - 8);
             ctx.fillStyle = '#95a3b8';
-            ctx.fillText(bar.label, x + 4, height - 6);
+            ctx.fillText(bar.label, x + 4, height - 10);
         });
+    }
+
+    function niceMax(value) {
+        value = Math.max(1, Number(value) || 1);
+        var power = Math.pow(10, Math.floor(Math.log(value) / Math.LN10));
+        var scaled = value / power;
+        var nice = scaled <= 1 ? 1 : (scaled <= 2 ? 2 : (scaled <= 5 ? 5 : 10));
+        return nice * power;
+    }
+
+    function drawTimeLabel(ctx, row, x, y, align) {
+        if (!row) {
+            return;
+        }
+        ctx.textAlign = align;
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#95a3b8';
+        ctx.fillText(shortTime(row.checked_at || ''), x, y);
+    }
+
+    function shortTime(value) {
+        var text = String(value || '');
+        var match = text.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+        if (match) {
+            return match[4] + ':' + match[5];
+        }
+        return text.slice(0, 12);
+    }
+
+    function setupChartHover(canvas) {
+        if (!canvas || canvas.__serverMonitorHoverReady) {
+            return;
+        }
+        canvas.__serverMonitorHoverReady = true;
+        canvas.addEventListener('mousemove', function (event) {
+            var points = canvas.__serverMonitorChartPoints || [];
+            if (!points.length) {
+                hideChartTooltip();
+                return;
+            }
+            var rect = canvas.getBoundingClientRect();
+            var x = event.clientX - rect.left;
+            var y = event.clientY - rect.top;
+            var nearest = null;
+            var best = Infinity;
+            points.forEach(function (point) {
+                var dx = point.x - x;
+                var dy = point.y - y;
+                var distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance < best) {
+                    best = distance;
+                    nearest = point;
+                }
+            });
+            if (!nearest || best > 42) {
+                hideChartTooltip();
+                return;
+            }
+            showChartTooltip(event.clientX, event.clientY, nearest);
+        });
+        canvas.addEventListener('mouseleave', hideChartTooltip);
+    }
+
+    function chartTooltip() {
+        var tooltip = document.getElementById('chartTooltip');
+        if (!tooltip) {
+            tooltip = document.createElement('div');
+            tooltip.id = 'chartTooltip';
+            tooltip.className = 'chart-tooltip';
+            tooltip.hidden = true;
+            document.body.appendChild(tooltip);
+        }
+        return tooltip;
+    }
+
+    function showChartTooltip(clientX, clientY, point) {
+        var tooltip = chartTooltip();
+        tooltip.innerHTML = '<strong>' + esc(point.latency) + ' ms</strong><span>' + esc(point.checkedAt) + '</span><small>' + esc(point.name) + '</small>';
+        tooltip.hidden = false;
+        tooltip.style.left = Math.min(clientX + 14, window.innerWidth - 190) + 'px';
+        tooltip.style.top = Math.max(clientY - 54, 8) + 'px';
+    }
+
+    function hideChartTooltip() {
+        var tooltip = document.getElementById('chartTooltip');
+        if (tooltip) {
+            tooltip.hidden = true;
+        }
     }
 })();

@@ -12,11 +12,11 @@ final class EmailNotifier
         $this->repo = $repo;
     }
 
-    public function notifyIfNeeded(array $before, array $after, array $result): void
+    public function notifyIfNeeded(array $before, array $after, array $result): bool
     {
         $settings = $this->repo->settings();
         if ($settings['email_enabled'] !== '1' || (int)($after['notify_enabled'] ?? 0) !== 1) {
-            return;
+            return false;
         }
 
         $current = (string)($after['status'] ?? 'unknown');
@@ -36,7 +36,7 @@ final class EmailNotifier
             && (int)($after['notify_on_recovery'] ?? 1) === 1;
 
         if (!$isDownAlert && !$isRecoveryAlert) {
-            return;
+            return false;
         }
 
         $recipient = trim((string)($after['notify_email'] ?? ''));
@@ -44,7 +44,7 @@ final class EmailNotifier
             $recipient = trim((string)$settings['email_default_to']);
         }
         if ($recipient === '') {
-            return;
+            return false;
         }
 
         $prefix = trim((string)$settings['email_subject_prefix']);
@@ -85,5 +85,7 @@ final class EmailNotifier
         if ($sent) {
             $this->repo->markNotified((int)$after['id'], $current);
         }
+
+        return true;
     }
 }

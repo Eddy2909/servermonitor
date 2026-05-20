@@ -34,7 +34,7 @@ final class Monitor
                 CURLOPT_MAXREDIRS => 5,
                 CURLOPT_CONNECTTIMEOUT => $timeout,
                 CURLOPT_TIMEOUT => $timeout,
-                CURLOPT_USERAGENT => 'Modern PHP Server Monitor',
+                CURLOPT_USERAGENT => 'Server Monitor',
                 CURLOPT_NOSIGNAL => true,
                 CURLOPT_HEADER => false,
             ]);
@@ -53,7 +53,7 @@ final class Monitor
                     'method' => $method,
                     'timeout' => $timeout,
                     'ignore_errors' => true,
-                    'header' => "User-Agent: Modern PHP Server Monitor\r\n",
+                    'header' => "User-Agent: Server Monitor\r\n",
                 ],
             ]);
             $body = (string)@file_get_contents($url, false, $context);

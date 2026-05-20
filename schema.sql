@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS `monitor_servers` (
     `expected_status` VARCHAR(80) NOT NULL DEFAULT '200-399',
     `expected_text` VARCHAR(255) NOT NULL DEFAULT '',
     `timeout_seconds` TINYINT UNSIGNED NOT NULL DEFAULT 10,
+    `check_interval_minutes` INT UNSIGNED NOT NULL DEFAULT 5,
     `enabled` TINYINT(1) NOT NULL DEFAULT 1,
     `public_visible` TINYINT(1) NOT NULL DEFAULT 1,
     `notify_enabled` TINYINT(1) NOT NULL DEFAULT 0,

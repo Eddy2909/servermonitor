@@ -14,6 +14,7 @@ $score = number_format((float)($server['uptime_score'] ?? 0), 1);
     data-expected-status="<?= e($server['expected_status']) ?>"
     data-expected-text="<?= e($server['expected_text']) ?>"
     data-timeout="<?= e($server['timeout_seconds']) ?>"
+    data-check-interval="<?= e($server['check_interval_minutes'] ?? 5) ?>"
     data-enabled="<?= e($server['enabled']) ?>"
     data-public-visible="<?= e($server['public_visible'] ?? 1) ?>"
     data-notify-enabled="<?= e($server['notify_enabled'] ?? 0) ?>"
