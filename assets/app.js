@@ -13,7 +13,6 @@
     var customPortWrap = document.getElementById('serverCustomPortWrap');
     var serverPort = document.getElementById('serverPort');
     var settingsForm = document.getElementById('settingsForm');
-    var publicSettingsForm = document.getElementById('publicSettingsForm');
     var toast = document.getElementById('toast');
     var sortState = { index: null, dir: 1 };
 
@@ -422,12 +421,38 @@
         });
     }
 
-    if (publicSettingsForm) {
-        publicSettingsForm.addEventListener('submit', function (event) {
+    Array.prototype.slice.call(document.querySelectorAll('[data-public-page-form]')).forEach(function (pageForm) {
+        pageForm.addEventListener('submit', function (event) {
             event.preventDefault();
-            submitSettings(publicSettingsForm);
+            post('public_page.save', new FormData(pageForm)).then(function (payload) {
+                showToast(payload.message || 'Public Page gespeichert.');
+                window.setTimeout(function () {
+                    window.location.reload();
+                }, 650);
+            }).catch(function (error) {
+                showToast(error.message);
+            });
         });
-    }
+    });
+
+    Array.prototype.slice.call(document.querySelectorAll('[data-delete-public-page]')).forEach(function (button) {
+        button.addEventListener('click', function (event) {
+            event.preventDefault();
+            if (!window.confirm('Diese Public Page wirklich loeschen?')) {
+                return;
+            }
+            var data = new FormData();
+            data.append('id', button.getAttribute('data-delete-public-page'));
+            post('public_page.delete', data).then(function (payload) {
+                showToast(payload.message || 'Public Page geloescht.');
+                window.setTimeout(function () {
+                    window.location.reload();
+                }, 650);
+            }).catch(function (error) {
+                showToast(error.message);
+            });
+        });
+    });
 
     Array.prototype.slice.call(document.querySelectorAll('[data-open-modal]')).forEach(function (button) {
         button.addEventListener('click', function (event) {
@@ -580,17 +605,28 @@
 
     function drawDashboardCharts() {
         var dataElement = document.getElementById('chartData');
-        if (!dataElement) {
-            return;
-        }
         var data = [];
-        try {
-            data = JSON.parse(dataElement.textContent || '[]');
-        } catch (error) {
-            data = [];
+        if (dataElement) {
+            try {
+                data = JSON.parse(dataElement.textContent || '[]');
+            } catch (error) {
+                data = [];
+            }
+            drawLatencyChart(document.getElementById('latencyChart'), data);
+            drawStatusChart(document.getElementById('statusChart'), data);
         }
-        drawLatencyChart(document.getElementById('latencyChart'), data);
-        drawStatusChart(document.getElementById('statusChart'), data);
+
+        var publicDataElement = document.getElementById('publicChartData');
+        var publicData = [];
+        if (publicDataElement) {
+            try {
+                publicData = JSON.parse(publicDataElement.textContent || '[]');
+            } catch (error) {
+                publicData = [];
+            }
+            drawLatencyChart(document.getElementById('publicLatencyChart'), publicData);
+            drawStatusChart(document.getElementById('publicStatusChart'), publicData);
+        }
     }
 
     function setupCanvas(canvas) {

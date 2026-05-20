@@ -27,6 +27,11 @@ if (!empty($activityRows[0]['checked_at'])) {
     $activityLastChecked = (string)$activityRows[0]['checked_at'];
 }
 $activityAvgLatency = $activityLatencyCount > 0 ? (int)round($activityLatencyTotal / $activityLatencyCount) : 0;
+$firstPublicPageUrl = 'index.php?page=settings';
+if (!empty($publicPages[0]['token'])) {
+    $firstPublicPageUrl = 'status/' . (string)$publicPages[0]['token'];
+}
+$assetVersion = bin2hex(random_bytes(6));
 ?>
 <!doctype html>
 <html lang="de">
@@ -35,7 +40,7 @@ $activityAvgLatency = $activityLatencyCount > 0 ? (int)round($activityLatencyTot
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="<?= e($csrf) ?>">
     <title><?= e($appName) ?> Dashboard</title>
-    <link rel="stylesheet" href="assets/app.css?v=<?= e((string)(@filemtime(APP_ROOT . '/assets/app.css') ?: random_int(100000, 999999))) ?>">
+    <link rel="stylesheet" href="assets/app.css?v=<?= e($assetVersion) ?>">
 </head>
 <body>
     <div class="app-shell">
@@ -52,7 +57,7 @@ $activityAvgLatency = $activityLatencyCount > 0 ? (int)round($activityLatencyTot
                 <a class="<?= $activePage === 'servers' ? 'active' : '' ?>" href="index.php?page=servers">Server</a>
                 <a class="<?= $activePage === 'activity' ? 'active' : '' ?>" href="index.php?page=activity">Aktivitaet</a>
                 <a class="<?= $activePage === 'settings' ? 'active' : '' ?>" href="index.php?page=settings">Einstellungen</a>
-                <a href="public.php" target="_blank" rel="noopener">Public Page</a>
+                <a href="<?= e($firstPublicPageUrl) ?>" target="_blank" rel="noopener">Public Page</a>
             </nav>
             <form method="post" action="index.php?action=logout" class="logout-form">
                 <input type="hidden" name="_csrf" value="<?= e($csrf) ?>">
@@ -341,42 +346,91 @@ $activityAvgLatency = $activityLatencyCount > 0 ? (int)round($activityLatencyTot
                     </form>
                 </article>
 
-                <article class="panel">
+                <article class="panel public-pages-panel">
                     <div class="panel-header compact">
                         <div>
                             <p class="eyebrow">Public</p>
-                            <h2>Status Page</h2>
+                            <h2>Status Pages</h2>
                         </div>
                     </div>
-                    <form id="publicSettingsForm" class="form-grid">
+                    <form class="public-page-form form-grid" data-public-page-form>
                         <input type="hidden" name="_csrf" value="<?= e($csrf) ?>">
-                        <label class="toggle-line"><input type="checkbox" name="public_status_enabled" value="1" <?= $settings['public_status_enabled'] === '1' ? 'checked' : '' ?>> Aktiv</label>
-                        <label class="toggle-line"><input type="checkbox" name="public_show_latency" value="1" <?= $settings['public_show_latency'] === '1' ? 'checked' : '' ?>> Latenz anzeigen</label>
-                        <label class="toggle-line"><input type="checkbox" name="public_show_uptime" value="1" <?= $settings['public_show_uptime'] === '1' ? 'checked' : '' ?>> Uptime anzeigen</label>
-                        <label class="toggle-line"><input type="checkbox" name="public_show_last_check" value="1" <?= $settings['public_show_last_check'] === '1' ? 'checked' : '' ?>> Letzten Check anzeigen</label>
-                        <label class="toggle-line"><input type="checkbox" name="public_show_incidents" value="1" <?= $settings['public_show_incidents'] === '1' ? 'checked' : '' ?>> Stoerungen anzeigen</label>
-                        <label>Titel<input name="public_status_title" value="<?= e($settings['public_status_title']) ?>"></label>
-                        <label>Badge / Eyebrow<input name="public_status_badge" value="<?= e($settings['public_status_badge']) ?>"></label>
-                        <label>Beschreibung<input name="public_status_description" value="<?= e($settings['public_status_description']) ?>"></label>
+                        <label class="toggle-line"><input type="checkbox" name="enabled" value="1" checked> Neue Page aktiv</label>
+                        <label>Titel<input name="title" value="System Status"></label>
+                        <label>Badge / Eyebrow<input name="badge" value="Live infrastructure status"></label>
+                        <label>Beschreibung<input name="description" value="Live status of monitored services."></label>
                         <label>Theme
-                            <select name="public_status_theme">
-                                <option value="dark" <?= $settings['public_status_theme'] === 'dark' ? 'selected' : '' ?>>Dark</option>
-                                <option value="light" <?= $settings['public_status_theme'] === 'light' ? 'selected' : '' ?>>Light</option>
+                            <select name="theme">
+                                <option value="dark">Dark</option>
+                                <option value="light">Light</option>
                             </select>
                         </label>
-                        <label>Akzentfarbe<input name="public_status_accent" value="<?= e($settings['public_status_accent']) ?>" placeholder="#5dd6a5"></label>
-                        <label>Footer Hinweis<input name="public_footer_note" value="<?= e($settings['public_footer_note']) ?>"></label>
-                        <input type="hidden" name="email_enabled" value="<?= e($settings['email_enabled']) ?>">
-                        <input type="hidden" name="email_from" value="<?= e($settings['email_from']) ?>">
-                        <input type="hidden" name="email_from_name" value="<?= e($settings['email_from_name']) ?>">
-                        <input type="hidden" name="email_default_to" value="<?= e($settings['email_default_to']) ?>">
-                        <input type="hidden" name="email_subject_prefix" value="<?= e($settings['email_subject_prefix']) ?>">
-                        <input type="hidden" name="warning_threshold_checks" value="<?= e($settings['warning_threshold_checks']) ?>">
+                        <label>Akzentfarbe<input name="accent" value="#5dd6a5" placeholder="#5dd6a5"></label>
+                        <label>Footer Hinweis<input name="footer_note"></label>
+                        <label class="toggle-line"><input type="checkbox" name="show_latency" value="1" checked> Latenz anzeigen</label>
+                        <label class="toggle-line"><input type="checkbox" name="show_uptime" value="1" checked> Uptime anzeigen</label>
+                        <label class="toggle-line"><input type="checkbox" name="show_last_check" value="1" checked> Letzten Check anzeigen</label>
+                        <label class="toggle-line"><input type="checkbox" name="show_incidents" value="1" checked> Stoerungen anzeigen</label>
+                        <div class="service-picker">
+                            <span class="metric-label">Dienste</span>
+                            <?php foreach ($servers as $server): ?>
+                                <label class="service-check"><input type="checkbox" name="server_ids[]" value="<?= e($server['id']) ?>" <?= (int)($server['enabled'] ?? 0) === 1 ? 'checked' : '' ?>> <?= e($server['name']) ?></label>
+                            <?php endforeach; ?>
+                        </div>
                         <div class="modal-actions">
-                            <a class="btn ghost" href="public.php" target="_blank" rel="noopener">Public Page oeffnen</a>
-                            <button class="btn primary" type="submit">Speichern</button>
+                            <button class="btn primary" type="submit">Public Page anlegen</button>
                         </div>
                     </form>
+
+                    <div class="public-page-list">
+                        <?php foreach ($publicPages ?? [] as $publicPage): ?>
+                            <?php
+                                $selectedServers = array_filter(explode(',', (string)($publicPage['server_ids'] ?? '')));
+                                $publicUrl = 'status/' . (string)$publicPage['token'];
+                            ?>
+                            <form class="public-page-card public-page-form" data-public-page-form>
+                                <input type="hidden" name="_csrf" value="<?= e($csrf) ?>">
+                                <input type="hidden" name="id" value="<?= e($publicPage['id']) ?>">
+                                <div class="public-page-card-head">
+                                    <div>
+                                        <span class="metric-label"><?= (int)$publicPage['enabled'] === 1 ? 'Aktiv' : 'Inaktiv' ?></span>
+                                        <strong><?= e($publicPage['title']) ?></strong>
+                                        <a href="<?= e($publicUrl) ?>" target="_blank" rel="noopener"><?= e($publicUrl) ?></a>
+                                    </div>
+                                    <span class="status-pill <?= (int)$publicPage['enabled'] === 1 ? 'up' : 'unknown' ?>"><?= e((string)$publicPage['assigned_count']) ?> Services</span>
+                                </div>
+                                <div class="form-grid compact-public-form">
+                                    <label class="toggle-line"><input type="checkbox" name="enabled" value="1" <?= (int)$publicPage['enabled'] === 1 ? 'checked' : '' ?>> Aktiv</label>
+                                    <label>Titel<input name="title" value="<?= e($publicPage['title']) ?>"></label>
+                                    <label>Badge<input name="badge" value="<?= e($publicPage['badge']) ?>"></label>
+                                    <label>Beschreibung<input name="description" value="<?= e($publicPage['description']) ?>"></label>
+                                    <label>Theme
+                                        <select name="theme">
+                                            <option value="dark" <?= $publicPage['theme'] === 'dark' ? 'selected' : '' ?>>Dark</option>
+                                            <option value="light" <?= $publicPage['theme'] === 'light' ? 'selected' : '' ?>>Light</option>
+                                        </select>
+                                    </label>
+                                    <label>Akzentfarbe<input name="accent" value="<?= e($publicPage['accent']) ?>"></label>
+                                    <label>Footer Hinweis<input name="footer_note" value="<?= e($publicPage['footer_note']) ?>"></label>
+                                    <label class="toggle-line"><input type="checkbox" name="show_latency" value="1" <?= (int)$publicPage['show_latency'] === 1 ? 'checked' : '' ?>> Latenz</label>
+                                    <label class="toggle-line"><input type="checkbox" name="show_uptime" value="1" <?= (int)$publicPage['show_uptime'] === 1 ? 'checked' : '' ?>> Uptime</label>
+                                    <label class="toggle-line"><input type="checkbox" name="show_last_check" value="1" <?= (int)$publicPage['show_last_check'] === 1 ? 'checked' : '' ?>> Letzter Check</label>
+                                    <label class="toggle-line"><input type="checkbox" name="show_incidents" value="1" <?= (int)$publicPage['show_incidents'] === 1 ? 'checked' : '' ?>> Stoerungen</label>
+                                </div>
+                                <div class="service-picker">
+                                    <span class="metric-label">Zugewiesene Dienste</span>
+                                    <?php foreach ($servers as $server): ?>
+                                        <label class="service-check"><input type="checkbox" name="server_ids[]" value="<?= e($server['id']) ?>" <?= in_array((string)$server['id'], $selectedServers, true) ? 'checked' : '' ?>> <?= e($server['name']) ?></label>
+                                    <?php endforeach; ?>
+                                </div>
+                                <div class="modal-actions">
+                                    <a class="btn ghost" href="<?= e($publicUrl) ?>" target="_blank" rel="noopener">Oeffnen</a>
+                                    <button class="btn ghost danger-action" type="button" data-delete-public-page="<?= e($publicPage['id']) ?>">Loeschen</button>
+                                    <button class="btn primary" type="submit">Speichern</button>
+                                </div>
+                            </form>
+                        <?php endforeach; ?>
+                    </div>
                 </article>
             </section>
             <?php endif; ?>
@@ -460,6 +514,6 @@ $activityAvgLatency = $activityLatencyCount > 0 ? (int)round($activityLatencyTot
 
     <div id="toast" class="toast" hidden></div>
     <script type="application/json" id="chartData"><?= json_encode($chartData, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?></script>
-    <script src="assets/app.js?v=<?= e((string)(@filemtime(APP_ROOT . '/assets/app.js') ?: random_int(100000, 999999))) ?>"></script>
+    <script src="assets/app.js?v=<?= e($assetVersion) ?>"></script>
 </body>
 </html>

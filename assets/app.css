@@ -177,6 +177,11 @@ select:focus {
     background: transparent;
 }
 
+.btn.danger-action {
+    border-color: rgba(255, 107, 120, .45);
+    color: #ffb8c0;
+}
+
 .wide {
     width: 100%;
 }
@@ -763,6 +768,82 @@ select:focus {
     color: var(--muted);
 }
 
+.public-chart-grid {
+    margin-bottom: 0;
+}
+
+.public-pages-panel {
+    display: grid;
+    gap: 18px;
+}
+
+.public-page-list {
+    display: grid;
+    gap: 14px;
+}
+
+.public-page-card {
+    display: grid;
+    gap: 14px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, .025);
+    padding: 14px;
+}
+
+.public-page-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.public-page-card-head strong,
+.public-page-card-head a {
+    display: block;
+}
+
+.public-page-card-head a {
+    margin-top: 6px;
+    color: var(--accent-2);
+    font-size: 12px;
+    text-decoration: none;
+    word-break: break-all;
+}
+
+.compact-public-form {
+    margin: 0;
+}
+
+.service-picker {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 12px;
+    background: #0a0f18;
+}
+
+.service-picker .metric-label {
+    grid-column: 1 / -1;
+}
+
+.service-check {
+    display: flex;
+    min-height: 34px;
+    align-items: center;
+    gap: 8px;
+    color: var(--soft);
+    font-weight: 700;
+}
+
+.service-check input {
+    width: 16px;
+    min-height: 16px;
+}
+
 .form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     margin: 20px 0;
@@ -839,9 +920,14 @@ select:focus {
 
     .pro-status-hero,
     .public-status-item,
-    .public-service-meta {
+    .public-service-meta,
+    .public-page-card-head {
         align-items: stretch;
         flex-direction: column;
+    }
+
+    .service-picker {
+        grid-template-columns: 1fr;
     }
 
     .details-summary {

@@ -2,6 +2,8 @@
 $overallStatus = ((int)$stats['offline'] > 0) ? 'degraded' : 'operational';
 $accent = preg_match('/^#[0-9a-fA-F]{6}$/', (string)$settings['public_status_accent']) ? $settings['public_status_accent'] : '#5dd6a5';
 $theme = $settings['public_status_theme'] === 'light' ? 'public-light' : 'public-dark';
+$assetBase = (string)($assetBase ?? '');
+$assetVersion = bin2hex(random_bytes(6));
 ?>
 <!doctype html>
 <html lang="de">
@@ -9,7 +11,7 @@ $theme = $settings['public_status_theme'] === 'light' ? 'public-light' : 'public
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= e($settings['public_status_title']) ?></title>
-    <link rel="stylesheet" href="assets/app.css">
+    <link rel="stylesheet" href="<?= e($assetBase) ?>assets/app.css?v=<?= e($assetVersion) ?>">
 </head>
 <body class="public-page <?= e($theme) ?>" style="--public-accent: <?= e($accent) ?>">
     <main class="public-shell pro-status-shell">
@@ -50,6 +52,27 @@ $theme = $settings['public_status_theme'] === 'light' ? 'public-light' : 'public
                     <small>Score</small>
                 </article>
             <?php endif; ?>
+        </section>
+
+        <section class="chart-grid public-chart-grid" id="publicCharts">
+            <article class="panel">
+                <div class="panel-header compact">
+                    <div>
+                        <p class="eyebrow">Performance</p>
+                        <h2>Latenzverlauf</h2>
+                    </div>
+                </div>
+                <canvas id="publicLatencyChart" class="dashboard-chart" height="170"></canvas>
+            </article>
+            <article class="panel">
+                <div class="panel-header compact">
+                    <div>
+                        <p class="eyebrow">Reliability</p>
+                        <h2>Status Mix</h2>
+                    </div>
+                </div>
+                <canvas id="publicStatusChart" class="dashboard-chart" height="170"></canvas>
+            </article>
         </section>
 
         <section class="public-layout">
@@ -114,5 +137,7 @@ $theme = $settings['public_status_theme'] === 'light' ? 'public-light' : 'public
             <footer class="public-footer-note"><?= e($settings['public_footer_note']) ?></footer>
         <?php endif; ?>
     </main>
+    <script type="application/json" id="publicChartData"><?= json_encode($chartData ?? [], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?></script>
+    <script src="<?= e($assetBase) ?>assets/app.js?v=<?= e($assetVersion) ?>"></script>
 </body>
 </html>

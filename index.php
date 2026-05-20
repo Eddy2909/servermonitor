@@ -73,6 +73,7 @@ try {
         'activityChecks' => $repo->activityChecks(),
         'notifications' => $repo->notificationLog(null, 12),
         'settings' => $repo->settings(),
+        'publicPages' => $repo->publicPages(),
         'chartData' => $repo->chartData(),
     ]);
 } catch (Throwable $exception) {
@@ -106,9 +107,19 @@ function handle_action(string $action, ServerRepository $repo): void
             json_response(['ok' => true, 'settings' => $settings, 'message' => 'Einstellungen gespeichert.']);
         }
 
+        if ($action === 'public_page.save') {
+            $page = $repo->savePublicPage($_POST);
+            json_response(['ok' => true, 'page' => $page, 'message' => 'Public Page gespeichert.']);
+        }
+
         $id = (int)($_POST['id'] ?? 0);
         if ($id <= 0) {
             json_response(['ok' => false, 'message' => 'Ungueltige ID.'], 422);
+        }
+
+        if ($action === 'public_page.delete') {
+            $repo->deletePublicPage($id);
+            json_response(['ok' => true, 'message' => 'Public Page geloescht.']);
         }
 
         if ($action === 'server.delete') {

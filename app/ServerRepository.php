@@ -37,6 +37,80 @@ final class ServerRepository
         );
     }
 
+    public function publicPages(): array
+    {
+        return $this->db->fetchAll(
+            'SELECT p.*,
+                    (SELECT COUNT(*) FROM ' . $this->db->table('public_page_servers') . ' ps WHERE ps.page_id = p.id) AS assigned_count,
+                    (SELECT GROUP_CONCAT(ps.server_id ORDER BY ps.sort_order ASC, ps.server_id ASC) FROM ' . $this->db->table('public_page_servers') . ' ps WHERE ps.page_id = p.id) AS server_ids
+             FROM ' . $this->db->table('public_pages') . ' p
+             ORDER BY p.title ASC'
+        );
+    }
+
+    public function publicPageByToken(string $token): ?array
+    {
+        if (!preg_match('/^[a-f0-9]{24,80}$/', $token)) {
+            return null;
+        }
+
+        return $this->db->fetchOne(
+            'SELECT * FROM ' . $this->db->table('public_pages') . '
+             WHERE token = :token AND enabled = 1',
+            ['token' => $token]
+        );
+    }
+
+    public function publicPageServers(int $pageId): array
+    {
+        return $this->db->fetchAll(
+            'SELECT s.*
+             FROM ' . $this->db->table('public_page_servers') . ' ps
+             JOIN ' . $this->db->table('servers') . ' s ON s.id = ps.server_id
+             WHERE ps.page_id = :page_id AND s.enabled = 1
+             ORDER BY ps.sort_order ASC, s.name ASC',
+            ['page_id' => $pageId]
+        );
+    }
+
+    public function savePublicPage(array $input): array
+    {
+        $data = $this->normalizePublicPage($input);
+
+        if (!empty($input['id'])) {
+            $data['id'] = (int)$input['id'];
+            $this->db->execute(
+                'UPDATE ' . $this->db->table('public_pages') . '
+                 SET title = :title, badge = :badge, description = :description, theme = :theme,
+                     accent = :accent, enabled = :enabled, show_latency = :show_latency,
+                     show_uptime = :show_uptime, show_last_check = :show_last_check,
+                     show_incidents = :show_incidents, footer_note = :footer_note, updated_at = NOW()
+                 WHERE id = :id',
+                $data
+            );
+            $pageId = (int)$data['id'];
+        } else {
+            $data['token'] = $this->uniquePublicToken();
+            $this->db->execute(
+                'INSERT INTO ' . $this->db->table('public_pages') . '
+                 (token, title, badge, description, theme, accent, enabled, show_latency, show_uptime,
+                  show_last_check, show_incidents, footer_note, created_at, updated_at)
+                 VALUES (:token, :title, :badge, :description, :theme, :accent, :enabled, :show_latency,
+                  :show_uptime, :show_last_check, :show_incidents, :footer_note, NOW(), NOW())',
+                $data
+            );
+            $pageId = $this->db->lastInsertId();
+        }
+
+        $this->syncPublicPageServers($pageId, $input['server_ids'] ?? []);
+        return $this->publicPage((int)$pageId) ?? [];
+    }
+
+    public function deletePublicPage(int $id): void
+    {
+        $this->db->execute('DELETE FROM ' . $this->db->table('public_pages') . ' WHERE id = :id', ['id' => $id]);
+    }
+
     public function find(int $id): ?array
     {
         return $this->db->fetchOne(
@@ -173,6 +247,29 @@ final class ServerRepository
         ];
     }
 
+    public function publicPageStats(int $pageId): array
+    {
+        $row = $this->db->fetchOne(
+            'SELECT COUNT(*) AS total,
+                    COALESCE(SUM(s.status = "up"), 0) AS online,
+                    COALESCE(SUM(s.status = "down"), 0) AS offline,
+                    ROUND(AVG(NULLIF(s.response_time_ms, 0))) AS avg_latency,
+                    ROUND(AVG(s.uptime_score), 1) AS avg_uptime
+             FROM ' . $this->db->table('public_page_servers') . ' ps
+             JOIN ' . $this->db->table('servers') . ' s ON s.id = ps.server_id
+             WHERE ps.page_id = :page_id AND s.enabled = 1',
+            ['page_id' => $pageId]
+        ) ?? [];
+
+        return [
+            'total' => (int)($row['total'] ?? 0),
+            'online' => (int)($row['online'] ?? 0),
+            'offline' => (int)($row['offline'] ?? 0),
+            'avg_latency' => (int)($row['avg_latency'] ?? 0),
+            'avg_uptime' => (float)($row['avg_uptime'] ?? 0),
+        ];
+    }
+
     public function recentChecks(int $limit = 16): array
     {
         return $this->db->fetchAll(
@@ -207,6 +304,20 @@ final class ServerRepository
         );
     }
 
+    public function publicPageRecentChecks(int $pageId, int $limit = 10): array
+    {
+        return $this->db->fetchAll(
+            'SELECT c.*, s.name
+             FROM ' . $this->db->table('checks') . ' c
+             JOIN ' . $this->db->table('servers') . ' s ON s.id = c.server_id
+             JOIN ' . $this->db->table('public_page_servers') . ' ps ON ps.server_id = s.id
+             WHERE ps.page_id = :page_id AND s.enabled = 1
+             ORDER BY c.checked_at DESC, c.id DESC
+             LIMIT ' . max(1, min(50, $limit)),
+            ['page_id' => $pageId]
+        );
+    }
+
     public function serverChecks(int $serverId, int $limit = 30): array
     {
         return $this->db->fetchAll(
@@ -226,6 +337,22 @@ final class ServerRepository
              JOIN ' . $this->db->table('servers') . ' s ON s.id = c.server_id
              ORDER BY c.checked_at DESC, c.id DESC
              LIMIT ' . max(10, min(200, $limit))
+        );
+
+        return array_reverse($checks);
+    }
+
+    public function publicPageChartData(int $pageId, int $limit = 80): array
+    {
+        $checks = $this->db->fetchAll(
+            'SELECT c.checked_at, c.status, c.response_time_ms, s.name
+             FROM ' . $this->db->table('checks') . ' c
+             JOIN ' . $this->db->table('servers') . ' s ON s.id = c.server_id
+             JOIN ' . $this->db->table('public_page_servers') . ' ps ON ps.server_id = s.id
+             WHERE ps.page_id = :page_id AND s.enabled = 1
+             ORDER BY c.checked_at DESC, c.id DESC
+             LIMIT ' . max(10, min(200, $limit)),
+            ['page_id' => $pageId]
         );
 
         return array_reverse($checks);
@@ -441,6 +568,94 @@ final class ServerRepository
              ON DUPLICATE KEY UPDATE value = VALUES(value)',
             ['name' => $name, 'value' => $value]
         );
+    }
+
+    private function publicPage(int $id): ?array
+    {
+        return $this->db->fetchOne(
+            'SELECT p.*,
+                    (SELECT COUNT(*) FROM ' . $this->db->table('public_page_servers') . ' ps WHERE ps.page_id = p.id) AS assigned_count,
+                    (SELECT GROUP_CONCAT(ps.server_id ORDER BY ps.sort_order ASC, ps.server_id ASC) FROM ' . $this->db->table('public_page_servers') . ' ps WHERE ps.page_id = p.id) AS server_ids
+             FROM ' . $this->db->table('public_pages') . ' p
+             WHERE p.id = :id
+             LIMIT 1',
+            ['id' => $id]
+        );
+    }
+
+    private function normalizePublicPage(array $input): array
+    {
+        $title = trim((string)($input['title'] ?? ''));
+        if ($title === '') {
+            throw new InvalidArgumentException('Title is required.');
+        }
+
+        $theme = (string)($input['theme'] ?? 'dark');
+        if (!in_array($theme, ['dark', 'light'], true)) {
+            $theme = 'dark';
+        }
+
+        $accent = trim((string)($input['accent'] ?? '#5dd6a5'));
+        if (!preg_match('/^#[0-9a-fA-F]{6}$/', $accent)) {
+            $accent = '#5dd6a5';
+        }
+
+        return [
+            'title' => $title,
+            'badge' => trim((string)($input['badge'] ?? '')),
+            'description' => trim((string)($input['description'] ?? '')),
+            'theme' => $theme,
+            'accent' => $accent,
+            'enabled' => !empty($input['enabled']) ? 1 : 0,
+            'show_latency' => !empty($input['show_latency']) ? 1 : 0,
+            'show_uptime' => !empty($input['show_uptime']) ? 1 : 0,
+            'show_last_check' => !empty($input['show_last_check']) ? 1 : 0,
+            'show_incidents' => !empty($input['show_incidents']) ? 1 : 0,
+            'footer_note' => trim((string)($input['footer_note'] ?? '')),
+        ];
+    }
+
+    private function syncPublicPageServers(int $pageId, mixed $serverIds): void
+    {
+        if (!is_array($serverIds)) {
+            $serverIds = $serverIds === '' ? [] : [$serverIds];
+        }
+
+        $ids = [];
+        foreach ($serverIds as $serverId) {
+            $serverId = (int)$serverId;
+            if ($serverId > 0) {
+                $ids[$serverId] = $serverId;
+            }
+        }
+
+        $this->db->execute(
+            'DELETE FROM ' . $this->db->table('public_page_servers') . ' WHERE page_id = :page_id',
+            ['page_id' => $pageId]
+        );
+
+        $index = 0;
+        foreach ($ids as $serverId) {
+            $this->db->execute(
+                'INSERT INTO ' . $this->db->table('public_page_servers') . ' (page_id, server_id, sort_order)
+                 VALUES (:page_id, :server_id, :sort_order)',
+                ['page_id' => $pageId, 'server_id' => $serverId, 'sort_order' => $index]
+            );
+            $index++;
+        }
+    }
+
+    private function uniquePublicToken(): string
+    {
+        do {
+            $token = bin2hex(random_bytes(18));
+            $row = $this->db->fetchOne(
+                'SELECT id FROM ' . $this->db->table('public_pages') . ' WHERE token = :token',
+                ['token' => $token]
+            );
+        } while ($row !== null);
+
+        return $token;
     }
 
     private function normalize(array $input): array
