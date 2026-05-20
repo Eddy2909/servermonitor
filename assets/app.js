@@ -420,6 +420,49 @@
         });
     }
 
+    function setupSettingsTabs() {
+        var tabs = Array.prototype.slice.call(document.querySelectorAll('[data-settings-tab]'));
+        var panels = Array.prototype.slice.call(document.querySelectorAll('[data-settings-panel]'));
+        if (!tabs.length || !panels.length) {
+            return;
+        }
+
+        function activate(name) {
+            tabs.forEach(function (tab) {
+                var active = tab.getAttribute('data-settings-tab') === name;
+                tab.classList.toggle('is-active', active);
+                tab.setAttribute('aria-selected', active ? 'true' : 'false');
+            });
+            panels.forEach(function (panel) {
+                var active = panel.getAttribute('data-settings-panel') === name;
+                panel.classList.toggle('is-active', active);
+                panel.hidden = !active;
+            });
+            try {
+                window.localStorage.setItem('serverMonitorSettingsTab', name);
+            } catch (error) {
+                return;
+            }
+        }
+
+        tabs.forEach(function (tab) {
+            tab.addEventListener('click', function () {
+                activate(tab.getAttribute('data-settings-tab'));
+            });
+        });
+
+        var saved = '';
+        try {
+            saved = window.localStorage.getItem('serverMonitorSettingsTab') || '';
+        } catch (error) {
+            saved = '';
+        }
+        if (!tabs.some(function (tab) { return tab.getAttribute('data-settings-tab') === saved; })) {
+            saved = 'mail';
+        }
+        activate(saved || 'mail');
+    }
+
     if (settingsForm) {
         settingsForm.addEventListener('submit', function (event) {
             event.preventDefault();
@@ -482,6 +525,14 @@
             });
         });
     });
+
+    Array.prototype.slice.call(document.querySelectorAll('.public-page-card-head a')).forEach(function (link) {
+        link.addEventListener('click', function (event) {
+            event.stopPropagation();
+        });
+    });
+
+    setupSettingsTabs();
 
     Array.prototype.slice.call(document.querySelectorAll('[data-open-modal]')).forEach(function (button) {
         button.addEventListener('click', function (event) {

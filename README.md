@@ -52,6 +52,7 @@ Pro Public Page koennen Titel, Beschreibung, Badge, Theme, Akzentfarbe, Footer-H
 - E-Mail-Benachrichtigungen mit Warnschwelle
 - Mehrere Public Status Pages mit Dienstzuweisung
 - Cron-Control-Center mit Token-Rotation, Health-Status, Laufprotokoll, Retry-Regeln und Wartungsfenster
+- Settings-Seite mit Tabs fuer E-Mail, Cronjob und Public Pages
 
 ## Cronjob
 
@@ -113,5 +114,6 @@ Im Dialog `Neuer Check` oder `Check bearbeiten` gibt es das Feld `Check-Interval
 - Bestehende `config.php`-Installationen mit altem App-Namen werden automatisch auf `Server Monitor` normalisiert.
 - Cron-Control-Center, Token-Rotation, Laufstatus, Retries, Alert-Limit, Wartungsfenster und Check-Intervall pro Dienst ergaenzt.
 - README um Cron-Konfiguration, Token-Fallback, JSON-Ausgabe und Dienst-Intervalle erweitert.
+- Settings-Seite in Tabs aufgeteilt und bestehende Public Pages einklappbar gemacht.
 - Zufallsbasiertes Cache-Busting fuer CSS und JavaScript auf Dashboard und Public Status Pages ergaenzt.
 - Activity-Seite als detailliertes, suchbares, filterbares und sortierbares Protokoll ausgebaut.

@@ -315,8 +315,14 @@ $cronStatusLabel = (string)($cronHealth['label'] ?? 'Cronstatus unklar');
             <?php endif; ?>
 
             <?php if ($activePage === 'settings'): ?>
-            <section class="settings-grid" id="settings">
-                <article class="panel">
+            <section class="settings-page" id="settings">
+                <div class="settings-tabs" role="tablist" aria-label="Einstellungsbereiche">
+                    <button type="button" class="settings-tab is-active" data-settings-tab="mail">E-Mail</button>
+                    <button type="button" class="settings-tab" data-settings-tab="cron">Cronjob</button>
+                    <button type="button" class="settings-tab" data-settings-tab="public">Public Pages</button>
+                </div>
+                <div class="settings-panels">
+                <article class="panel settings-panel is-active" data-settings-panel="mail">
                     <div class="panel-header compact">
                         <div>
                             <p class="eyebrow">Mail</p>
@@ -349,7 +355,7 @@ $cronStatusLabel = (string)($cronHealth['label'] ?? 'Cronstatus unklar');
                     </form>
                 </article>
 
-                <article class="panel cron-panel">
+                <article class="panel cron-panel settings-panel" data-settings-panel="cron">
                     <div class="panel-header compact">
                         <div>
                             <p class="eyebrow">Automation</p>
@@ -400,7 +406,7 @@ $cronStatusLabel = (string)($cronHealth['label'] ?? 'Cronstatus unklar');
                     </form>
                 </article>
 
-                <article class="panel public-pages-panel">
+                <article class="panel public-pages-panel settings-panel" data-settings-panel="public">
                     <div class="panel-header compact">
                         <div>
                             <p class="eyebrow">Public</p>
@@ -442,17 +448,18 @@ $cronStatusLabel = (string)($cronHealth['label'] ?? 'Cronstatus unklar');
                                 $selectedServers = array_filter(explode(',', (string)($publicPage['server_ids'] ?? '')));
                                 $publicUrl = 'status/' . (string)$publicPage['token'];
                             ?>
-                            <form class="public-page-card public-page-form" data-public-page-form>
-                                <input type="hidden" name="_csrf" value="<?= e($csrf) ?>">
-                                <input type="hidden" name="id" value="<?= e($publicPage['id']) ?>">
-                                <div class="public-page-card-head">
+                            <details class="public-page-card">
+                                <summary class="public-page-card-head">
                                     <div>
                                         <span class="metric-label"><?= (int)$publicPage['enabled'] === 1 ? 'Aktiv' : 'Inaktiv' ?></span>
                                         <strong><?= e($publicPage['title']) ?></strong>
                                         <a href="<?= e($publicUrl) ?>" target="_blank" rel="noopener"><?= e($publicUrl) ?></a>
                                     </div>
                                     <span class="status-pill <?= (int)$publicPage['enabled'] === 1 ? 'up' : 'unknown' ?>"><?= e((string)$publicPage['assigned_count']) ?> Services</span>
-                                </div>
+                                </summary>
+                                <form class="public-page-form" data-public-page-form>
+                                <input type="hidden" name="_csrf" value="<?= e($csrf) ?>">
+                                <input type="hidden" name="id" value="<?= e($publicPage['id']) ?>">
                                 <div class="form-grid compact-public-form">
                                     <label class="toggle-line"><input type="checkbox" name="enabled" value="1" <?= (int)$publicPage['enabled'] === 1 ? 'checked' : '' ?>> Aktiv</label>
                                     <label>Titel<input name="title" value="<?= e($publicPage['title']) ?>"></label>
@@ -482,10 +489,12 @@ $cronStatusLabel = (string)($cronHealth['label'] ?? 'Cronstatus unklar');
                                     <button class="btn ghost danger-action" type="button" data-delete-public-page="<?= e($publicPage['id']) ?>">Loeschen</button>
                                     <button class="btn primary" type="submit">Speichern</button>
                                 </div>
-                            </form>
+                                </form>
+                            </details>
                         <?php endforeach; ?>
                     </div>
                 </article>
+                </div>
             </section>
             <?php endif; ?>
         </main>

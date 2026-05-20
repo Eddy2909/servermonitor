@@ -327,6 +327,52 @@ select:focus {
     margin-bottom: 16px;
 }
 
+.settings-page {
+    display: grid;
+    gap: 16px;
+}
+
+.settings-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    gap: 8px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: rgba(10, 15, 24, .96);
+    padding: 8px;
+}
+
+.settings-tab {
+    min-height: 38px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--muted);
+    padding: 0 14px;
+    font-weight: 900;
+}
+
+.settings-tab:hover,
+.settings-tab.is-active {
+    border-color: var(--line);
+    background: var(--panel);
+    color: var(--text);
+}
+
+.settings-panels {
+    display: grid;
+}
+
+.settings-panel {
+    display: none;
+}
+
+.settings-panel.is-active {
+    display: block;
+}
+
 .dashboard-chart {
     display: block;
     width: 100%;
@@ -846,6 +892,33 @@ select:focus {
     align-items: flex-start;
     justify-content: space-between;
     gap: 14px;
+    cursor: pointer;
+    list-style: none;
+}
+
+.public-page-card-head::-webkit-details-marker {
+    display: none;
+}
+
+.public-page-card-head::after {
+    display: inline-grid;
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    color: var(--muted);
+    content: "+";
+}
+
+.public-page-card[open] .public-page-card-head::after {
+    content: "-";
+}
+
+.public-page-card .public-page-form {
+    display: grid;
+    gap: 14px;
 }
 
 .public-page-card-head strong,
@@ -956,7 +1029,8 @@ select:focus {
     .panel-header,
     .top-actions,
     .table-tools,
-    .modal-actions {
+    .modal-actions,
+    .settings-tabs {
         align-items: stretch;
         flex-direction: column;
     }
