@@ -1,4 +1,4 @@
-# PHP Server Monitor
+# Server Monitor
 
 Standalone Monitoring-Dashboard fuer Shared Hosting mit PHP, PDO und MySQL/MariaDB. Die Anwendung verwaltet Website-, TCP-Service- und Ping-Checks, protokolliert Abfragen, versendet optionale E-Mail-Benachrichtigungen und stellt konfigurierbare Public Status Pages bereit.
 
