@@ -87,7 +87,6 @@ $assetVersion = bin2hex(random_bytes(6));
                         <div class="public-status-item pro-service-row">
                             <div>
                                 <strong><?= e($server['name']) ?></strong>
-                                <small><?= e($server['url']) ?></small>
                             </div>
                             <div class="public-service-meta">
                                 <?php if ($settings['public_show_latency'] === '1'): ?>
