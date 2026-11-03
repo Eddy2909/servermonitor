@@ -56,6 +56,7 @@ function load_config(bool $required = true): array
             'session_name' => 'server_monitor_admin',
             'session_lifetime' => 1800,
             'password_cost' => 12,
+            'trusted_proxies' => [],
         ],
         'cron' => [
             'token' => '',
@@ -91,20 +92,46 @@ function start_secure_session(array $security = []): void
         'lifetime' => 0,
         'path' => '/',
         'domain' => '',
-        'secure' => is_secure_request(),
+        'secure' => is_secure_request($security),
         'httponly' => true,
         'samesite' => 'Lax',
     ]);
     session_start();
 }
 
-function is_secure_request(): bool
+function is_secure_request(array $security = []): bool
 {
     if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
         return true;
     }
 
-    return isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https';
+    if (!is_trusted_proxy($security)) {
+        return false;
+    }
+
+    return isset($_SERVER['HTTP_X_FORWARDED_PROTO'])
+        && strtolower((string)$_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https';
+}
+
+function is_trusted_proxy(array $security = []): bool
+{
+    $trusted = $security['trusted_proxies'] ?? [];
+    if (!is_array($trusted) || $trusted === []) {
+        return false;
+    }
+
+    $remote = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+    if ($remote === '') {
+        return false;
+    }
+
+    foreach ($trusted as $proxy) {
+        if ($remote === (string)$proxy) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function e(mixed $value): string
@@ -118,6 +145,20 @@ function redirect(string $target): void
     exit;
 }
 
+function send_security_headers(bool $allowFraming = false): void
+{
+    if (headers_sent()) {
+        return;
+    }
+
+    header('X-Content-Type-Options: nosniff');
+    if (!$allowFraming) {
+        header('X-Frame-Options: SAMEORIGIN');
+    }
+    header('Referrer-Policy: strict-origin-when-cross-origin');
+    header('Permissions-Policy: geolocation=(), microphone=(), camera=()');
+}
+
 function json_response(array $payload, int $status = 200): void
 {
     while (ob_get_level() > 0) {
@@ -125,11 +166,13 @@ function json_response(array $payload, int $status = 200): void
     }
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
-    echo json_encode($payload, JSON_THROW_ON_ERROR);
+    echo json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE);
     exit;
 }
 
-function app_url(string $path = 'index.php'): string
+function app_url(string $path = 'index.php', string $baseUrl = ''): string
 {
-    return $path;
+    $base = rtrim($baseUrl, '/');
+
+    return $base === '' ? $path : $base . '/' . ltrim($path, '/');
 }

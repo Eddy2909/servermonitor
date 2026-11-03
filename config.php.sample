@@ -22,6 +22,9 @@ return [
         'session_name' => 'server_monitor_admin',
         'session_lifetime' => 1800,
         'password_cost' => 12,
+        // Nur wenn die App hinter einem Reverse-Proxy laeuft: dessen IP(s) hier
+        // eintragen, damit X-Forwarded-Proto fuer das Secure-Cookie ausgewertet wird.
+        'trusted_proxies' => [],
     ],
 
     'cron' => [

@@ -16,6 +16,9 @@ final class Auth
         $this->expireIdleSession();
     }
 
+    private const MAX_LOGIN_ATTEMPTS = 5;
+    private const LOGIN_WINDOW_SECONDS = 900;
+
     public function login(string $username, string $password): bool
     {
         $user = $this->db->fetchOne(
@@ -31,10 +34,12 @@ final class Auth
                 ]);
                 password_verify($password, $dummyHash);
             }
+            $this->recordLoginFailure($username);
             return false;
         }
 
         session_regenerate_id(true);
+        unset($_SESSION['_csrf_token']);
         $_SESSION['user_id'] = (int)$user['id'];
         $_SESSION['username'] = (string)$user['username'];
         $_SESSION['role'] = (string)$user['role'];
@@ -46,6 +51,8 @@ final class Auth
             'UPDATE ' . $this->db->table('users') . ' SET last_login_at = NOW() WHERE id = :id',
             ['id' => (int)$user['id']]
         );
+
+        $this->recordLoginSuccess($username);
 
         $cost = (int)($this->security['password_cost'] ?? 12);
         if (password_needs_rehash((string)$user['password_hash'], PASSWORD_DEFAULT, ['cost' => $cost])) {
@@ -113,5 +120,72 @@ final class Auth
     private function fingerprint(): string
     {
         return hash('sha256', (string)($_SERVER['HTTP_USER_AGENT'] ?? 'cli'));
+    }
+
+    /**
+     * Einfache Brute-Force-Bremse: zaehlt Fehlversuche pro IP+Konto in einem
+     * Zeitfenster. Kein permanentes Lock, damit sich Nutzer nicht aussperren.
+     */
+    public function loginLockRemaining(string $username): int
+    {
+        $row = $this->db->fetchOne(
+            'SELECT value FROM ' . $this->db->table('settings') . ' WHERE name = :name',
+            ['name' => $this->loginThrottleKey($username)]
+        );
+        if ($row === null || !isset($row['value'])) {
+            return 0;
+        }
+
+        [$count, $first] = array_pad(explode('|', (string)$row['value']), 2, '0');
+        $count = (int)$count;
+        $first = (int)$first;
+        if ($count < self::MAX_LOGIN_ATTEMPTS || $first <= 0 || time() - $first > self::LOGIN_WINDOW_SECONDS) {
+            return 0;
+        }
+
+        return max(0, ($first + self::LOGIN_WINDOW_SECONDS) - time());
+    }
+
+    private function recordLoginFailure(string $username): void
+    {
+        $key = $this->loginThrottleKey($username);
+        $row = $this->db->fetchOne(
+            'SELECT value FROM ' . $this->db->table('settings') . ' WHERE name = :name',
+            ['name' => $key]
+        );
+
+        $now = time();
+        $count = 0;
+        $first = $now;
+        if ($row !== null && isset($row['value'])) {
+            [$storedCount, $storedFirst] = array_pad(explode('|', (string)$row['value']), 2, '0');
+            $storedCount = (int)$storedCount;
+            $storedFirst = (int)$storedFirst;
+            if ($storedFirst > 0 && $now - $storedFirst <= self::LOGIN_WINDOW_SECONDS) {
+                $count = $storedCount;
+                $first = $storedFirst;
+            }
+        }
+
+        $this->db->execute(
+            'INSERT INTO ' . $this->db->table('settings') . ' (name, value) VALUES (:name, :value)
+             ON DUPLICATE KEY UPDATE value = VALUES(value)',
+            ['name' => $key, 'value' => ($count + 1) . '|' . $first]
+        );
+    }
+
+    private function recordLoginSuccess(string $username): void
+    {
+        $this->db->execute(
+            'DELETE FROM ' . $this->db->table('settings') . ' WHERE name = :name',
+            ['name' => $this->loginThrottleKey($username)]
+        );
+    }
+
+    private function loginThrottleKey(string $username): string
+    {
+        $ip = (string)($_SERVER['REMOTE_ADDR'] ?? 'cli');
+
+        return 'login_fail_' . substr(hash('sha256', $ip . '|' . strtolower(trim($username))), 0, 24);
     }
 }

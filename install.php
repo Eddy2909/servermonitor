@@ -15,6 +15,7 @@ $configMissing = empty($config);
 
 if (!$configMissing) {
     configure_runtime($config);
+    send_security_headers();
     start_secure_session($config['security']);
     try {
         $db = new Database($config['db']);

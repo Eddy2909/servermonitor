@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS `monitor_checks` (
     `checked_at` DATETIME NOT NULL,
     PRIMARY KEY (`id`),
     KEY `server_checked` (`server_id`, `checked_at`),
+    KEY `checked_at_idx` (`checked_at`),
     CONSTRAINT `monitor_checks_server_fk` FOREIGN KEY (`server_id`) REFERENCES `monitor_servers` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

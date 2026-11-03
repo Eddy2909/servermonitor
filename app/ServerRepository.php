@@ -8,6 +8,7 @@ use InvalidArgumentException;
 final class ServerRepository
 {
     private Database $db;
+    private bool $cronLockHeld = false;
 
     public function __construct(Database $db)
     {
@@ -31,14 +32,17 @@ final class ServerRepository
     public function dueForCron(int $limit): array
     {
         return $this->db->fetchAll(
+            // Zeitbasis bewusst PHP-seitig (:now), damit die Faelligkeit nicht von
+            // der MySQL-Session-Zeitzone abhaengt.
             'SELECT * FROM ' . $this->db->table('servers') . '
              WHERE enabled = 1
                AND (
                     last_checked_at IS NULL
-                    OR TIMESTAMPDIFF(MINUTE, last_checked_at, NOW()) >= check_interval_minutes
+                    OR last_checked_at <= DATE_SUB(:now, INTERVAL check_interval_minutes MINUTE)
                )
              ORDER BY last_checked_at IS NULL DESC, last_checked_at ASC, name ASC
-             LIMIT ' . max(1, min(500, $limit))
+             LIMIT ' . max(1, min(500, $limit)),
+            ['now' => date('Y-m-d H:i:s')]
         );
     }
 
@@ -169,6 +173,7 @@ final class ServerRepository
     public function delete(int $id): void
     {
         $this->db->execute('DELETE FROM ' . $this->db->table('checks') . ' WHERE server_id = :id', ['id' => $id]);
+        $this->db->execute('DELETE FROM ' . $this->db->table('notifications') . ' WHERE server_id = :id', ['id' => $id]);
         $this->db->execute('DELETE FROM ' . $this->db->table('servers') . ' WHERE id = :id', ['id' => $id]);
     }
 
@@ -224,12 +229,12 @@ final class ServerRepository
     public function stats(): array
     {
         $row = $this->db->fetchOne(
-            'SELECT COUNT(*) AS total,
-                    COALESCE(SUM(status = "up"), 0) AS online,
-                    COALESCE(SUM(status = "down"), 0) AS offline,
+            "SELECT COUNT(*) AS total,
+                    COALESCE(SUM(status = 'up'), 0) AS online,
+                    COALESCE(SUM(status = 'down'), 0) AS offline,
                     ROUND(AVG(NULLIF(response_time_ms, 0))) AS avg_latency,
                     ROUND(AVG(uptime_score), 1) AS avg_uptime
-             FROM ' . $this->db->table('servers')
+             FROM " . $this->db->table('servers')
         ) ?? [];
 
         return [
@@ -244,13 +249,13 @@ final class ServerRepository
     public function publicStats(): array
     {
         $row = $this->db->fetchOne(
-            'SELECT COUNT(*) AS total,
-                    COALESCE(SUM(status = "up"), 0) AS online,
-                    COALESCE(SUM(status = "down"), 0) AS offline,
+            "SELECT COUNT(*) AS total,
+                    COALESCE(SUM(status = 'up'), 0) AS online,
+                    COALESCE(SUM(status = 'down'), 0) AS offline,
                     ROUND(AVG(NULLIF(response_time_ms, 0))) AS avg_latency,
                     ROUND(AVG(uptime_score), 1) AS avg_uptime
-             FROM ' . $this->db->table('servers') . '
-             WHERE enabled = 1 AND public_visible = 1'
+             FROM " . $this->db->table('servers') . "
+             WHERE enabled = 1 AND public_visible = 1"
         ) ?? [];
 
         return [
@@ -265,14 +270,14 @@ final class ServerRepository
     public function publicPageStats(int $pageId): array
     {
         $row = $this->db->fetchOne(
-            'SELECT COUNT(*) AS total,
-                    COALESCE(SUM(s.status = "up"), 0) AS online,
-                    COALESCE(SUM(s.status = "down"), 0) AS offline,
+            "SELECT COUNT(*) AS total,
+                    COALESCE(SUM(s.status = 'up'), 0) AS online,
+                    COALESCE(SUM(s.status = 'down'), 0) AS offline,
                     ROUND(AVG(NULLIF(s.response_time_ms, 0))) AS avg_latency,
                     ROUND(AVG(s.uptime_score), 1) AS avg_uptime
-             FROM ' . $this->db->table('public_page_servers') . ' ps
-             JOIN ' . $this->db->table('servers') . ' s ON s.id = ps.server_id
-             WHERE ps.page_id = :page_id AND s.enabled = 1',
+             FROM " . $this->db->table('public_page_servers') . " ps
+             JOIN " . $this->db->table('servers') . " s ON s.id = ps.server_id
+             WHERE ps.page_id = :page_id AND s.enabled = 1",
             ['page_id' => $pageId]
         ) ?? [];
 
@@ -506,7 +511,7 @@ final class ServerRepository
                 $value = '';
             }
             if ($key === 'cron_token' && $value !== '' && !preg_match('/^[a-zA-Z0-9_-]{20,160}$/', $value)) {
-                $value = '';
+                throw new InvalidArgumentException('Cron-Token ungueltig: erlaubt sind 20-160 Zeichen aus Buchstaben, Zahlen, - und _. Der bisherige Token bleibt erhalten.');
             }
             if ($key === 'public_status_theme' && !in_array($value, ['dark', 'light'], true)) {
                 $value = 'dark';
@@ -598,18 +603,31 @@ final class ServerRepository
 
     public function acquireCronLock(int $seconds): bool
     {
-        $lock = $this->setting('cron_running_until');
-        if ($lock !== null && (int)$lock > time()) {
+        // Atomarer MySQL-Named-Lock: verhindert parallele Laeufe auch bei
+        // gleichzeitigem Cronaufruf. Der Lock haengt an dieser DB-Verbindung
+        // und wird automatisch freigegeben, wenn das Skript endet.
+        $row = $this->db->fetchOne('SELECT GET_LOCK(:name, 0) AS acquired', ['name' => $this->cronLockName()]);
+        if ((int)($row['acquired'] ?? 0) !== 1) {
             return false;
         }
 
+        $this->cronLockHeld = true;
         $this->setSetting('cron_running_until', (string)(time() + max(30, $seconds)));
         return true;
     }
 
     public function releaseCronLock(): void
     {
+        if ($this->cronLockHeld) {
+            $this->db->fetchOne('SELECT RELEASE_LOCK(:name) AS released', ['name' => $this->cronLockName()]);
+            $this->cronLockHeld = false;
+        }
         $this->setSetting('cron_running_until', '0');
+    }
+
+    private function cronLockName(): string
+    {
+        return substr($this->db->prefix() . 'cron_lock', 0, 64);
     }
 
     public function markCronStarted(): void
@@ -675,13 +693,13 @@ final class ServerRepository
     private function uptimeScore(int $serverId): float
     {
         $row = $this->db->fetchOne(
-            'SELECT COUNT(*) AS total, COALESCE(SUM(status = "up"), 0) AS up_checks
+            "SELECT COUNT(*) AS total, COALESCE(SUM(status = 'up'), 0) AS up_checks
              FROM (
-                SELECT status FROM ' . $this->db->table('checks') . '
+                SELECT status FROM " . $this->db->table('checks') . "
                 WHERE server_id = :server_id
                 ORDER BY checked_at DESC, id DESC
                 LIMIT 100
-             ) recent',
+             ) recent",
             ['server_id' => $serverId]
         ) ?? ['total' => 0, 'up_checks' => 0];
 
@@ -812,6 +830,10 @@ final class ServerRepository
         $url = trim((string)($input['url'] ?? ''));
         if ($name === '' || $url === '') {
             throw new InvalidArgumentException('Name and target are required.');
+        }
+
+        if ($type === 'website' && !preg_match('#^https?://#i', $url)) {
+            throw new InvalidArgumentException('Website-Ziel muss mit http:// oder https:// beginnen.');
         }
 
         $method = strtoupper((string)($input['method'] ?? 'GET'));

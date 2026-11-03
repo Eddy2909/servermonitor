@@ -1,0 +1,7 @@
+# Lokale Konfiguration mit Zugangsdaten - niemals committen
+config.php
+
+# Laufzeit-/Editor-Artefakte
+*.log
+.DS_Store
+Thumbs.db

@@ -15,6 +15,7 @@ require __DIR__ . '/app/bootstrap.php';
 try {
     $config = load_config();
     configure_runtime($config);
+    send_security_headers();
 
     $db = new Database($config['db']);
     Schema::ensure($db);
@@ -36,9 +37,12 @@ try {
     if ($page === 'login') {
         $error = '';
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $username = (string)($_POST['username'] ?? '');
             if (!Csrf::validateRequest()) {
                 $error = 'Die Sitzung ist abgelaufen. Bitte erneut versuchen.';
-            } elseif ($auth->login((string)($_POST['username'] ?? ''), (string)($_POST['password'] ?? ''))) {
+            } elseif ($auth->loginLockRemaining($username) > 0) {
+                $error = 'Zu viele Fehlversuche. Bitte in einigen Minuten erneut versuchen.';
+            } elseif ($auth->login($username, (string)($_POST['password'] ?? ''))) {
                 redirect('index.php');
             } else {
                 $error = 'Benutzername oder Passwort ist falsch.';

@@ -103,7 +103,24 @@ Im Dialog `Neuer Check` oder `Check bearbeiten` gibt es das Feld `Check-Interval
 
 `dashboard.php` und `public.php` laden `assets/app.css` und `assets/app.js` mit einem zufaelligen Cache-Busting-Parameter. Dadurch werden CSS und JavaScript bei jedem Seitenaufruf frisch angefordert.
 
+## Sicherheit & Betrieb
+
+- Die mitgelieferte `.htaccess` blockiert den Direktzugriff auf `app/`, `config.php` und `schema.sql`
+  und aktiviert die schoene URL `/status/<token>` (mod_rewrite).
+- Fuer die App hinter einem Reverse-Proxy kann in `config.php` unter `security.trusted_proxies`
+  die Proxy-IP hinterlegt werden, damit `X-Forwarded-Proto` fuer das Secure-Cookie ausgewertet wird.
+- MySQL-Session-Zeitzone wird automatisch an die PHP-Zeitzone angeglichen, damit `NOW()` und
+  PHP-Zeitstempel konsistent sind.
+- Login hat eine einfache Brute-Force-Bremse (5 Fehlversuche pro IP+Konto in 15 Minuten).
+
 ## Aenderungsnotizen
+
+- Fehlerbehebungspaket: Zeitzonen-Konsistenz (PHP vs. MySQL), atomarer Cron-Lock (MySQL `GET_LOCK`),
+  Schema-Versionierung statt Pruefung bei jedem Request, ehrlicher Ping-Fallback (kein stiller 
+  TCP-80-Ersatz), finale HTTP-Statuszeile nach Redirects, Aufraeumen der Benachrichtigungen beim
+  Loeschen, Token-Validierung mit Fehlermeldung, Security-Header, Login-Rate-Limit, Header-Injection-Schutz.
+- Index auf `checks.checked_at`, `ANSI_QUOTES`-feste Statusvergleiche, URL-Schema-Validierung,
+  `.htaccess` und `.gitignore` ergaenzt.
 
 - Mehrere Public Status Pages mit zufaelligen Token-URLs ergaenzt.
 - Dienstzuweisung pro Public Page in der Settings-UI ergaenzt.

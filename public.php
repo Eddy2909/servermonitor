@@ -11,6 +11,8 @@ require __DIR__ . '/app/bootstrap.php';
 try {
     $config = load_config();
     configure_runtime($config);
+    // Public Status Page darf in fremde Seiten eingebettet werden.
+    send_security_headers(true);
     $db = new Database($config['db']);
     Schema::ensure($db);
     $repo = new ServerRepository($db);

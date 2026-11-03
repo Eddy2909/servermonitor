@@ -41,6 +41,28 @@ final class Database
         } catch (PDOException $exception) {
             throw new RuntimeException('Database connection failed.', 0, $exception);
         }
+
+        $this->alignSessionTimezone();
+    }
+
+    /**
+     * Richtet die MySQL-Session-Zeitzone an der PHP-Zeitzone aus, damit NOW()
+     * (created_at/updated_at) und PHP-seitige Zeitstempel (checked_at) dieselbe
+     * Basis haben. Ohne diesen Schritt kann die Faelligkeitspruefung in
+     * dueForCron() bei abweichender DB-Zeitzone dauerhaft negativ rechnen.
+     */
+    private function alignSessionTimezone(): void
+    {
+        $offset = date('P');
+        if (!is_string($offset) || !preg_match('/^[+-]\d{2}:\d{2}$/', $offset)) {
+            return;
+        }
+
+        try {
+            $this->pdo->exec('SET time_zone = ' . $this->pdo->quote($offset));
+        } catch (PDOException $exception) {
+            // Manche Hosts verbieten SET time_zone; dann bleibt die DB-Zeitzone aktiv.
+        }
     }
 
     public function pdo(): PDO
