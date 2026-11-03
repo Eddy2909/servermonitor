@@ -43,13 +43,14 @@ final class EmailNotifier
         if ($recipient === '') {
             $recipient = trim((string)$settings['email_default_to']);
         }
+        $recipient = $this->sanitizeHeader($recipient);
         if ($recipient === '') {
             return false;
         }
 
         $prefix = trim((string)$settings['email_subject_prefix']);
         $state = $current === 'up' ? 'RECOVERY' : 'DOWN';
-        $subject = trim($prefix . ' ' . $state . ': ' . (string)$after['name']);
+        $subject = $this->sanitizeHeader(trim($prefix . ' ' . $state . ': ' . (string)$after['name']));
         $body = implode("\n", [
             'Monitor: ' . (string)$after['name'],
             'Target: ' . (string)$after['url'],
@@ -60,8 +61,8 @@ final class EmailNotifier
             'Error: ' . ((string)($result['error_message'] ?? '-')),
         ]);
 
-        $from = trim((string)$settings['email_from']);
-        $fromName = trim((string)$settings['email_from_name']);
+        $from = $this->sanitizeHeader(trim((string)$settings['email_from']));
+        $fromName = $this->sanitizeHeader(trim((string)$settings['email_from_name']));
         $headers = [
             'MIME-Version: 1.0',
             'Content-Type: text/plain; charset=UTF-8',
@@ -87,5 +88,14 @@ final class EmailNotifier
         }
 
         return true;
+    }
+
+    /**
+     * Entfernt CR/LF aus Header-Feldern, um Header-Injection ueber
+     * Betreff, Empfaenger oder Absender zu verhindern.
+     */
+    private function sanitizeHeader(string $value): string
+    {
+        return str_replace(["\r", "\n", "\0"], ' ', $value);
     }
 }

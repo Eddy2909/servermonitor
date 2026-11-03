@@ -28,7 +28,7 @@ final class Monitor
 
         if (function_exists('curl_init')) {
             $curl = curl_init($url);
-            curl_setopt_array($curl, [
+            $options = [
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_FOLLOWLOCATION => true,
                 CURLOPT_MAXREDIRS => 5,
@@ -37,7 +37,15 @@ final class Monitor
                 CURLOPT_USERAGENT => 'Server Monitor',
                 CURLOPT_NOSIGNAL => true,
                 CURLOPT_HEADER => false,
-            ]);
+            ];
+            if (defined('CURLOPT_PROTOCOLS_STR')) {
+                $options[CURLOPT_PROTOCOLS_STR] = 'http,https';
+                $options[CURLOPT_REDIR_PROTOCOLS_STR] = 'http,https';
+            } else {
+                $options[CURLOPT_PROTOCOLS] = CURLPROTO_HTTP | CURLPROTO_HTTPS;
+                $options[CURLOPT_REDIR_PROTOCOLS] = CURLPROTO_HTTP | CURLPROTO_HTTPS;
+            }
+            curl_setopt_array($curl, $options);
             if ($method === 'HEAD') {
                 curl_setopt($curl, CURLOPT_NOBODY, true);
             }
@@ -130,8 +138,14 @@ final class Monitor
             }
         }
 
+        // Kein stiller TCP-80-Ersatz mehr: ein TCP-Check wird nur genutzt,
+        // wenn ein Port konfiguriert wurde, sonst ehrlicher Fehler statt Falsch-Positiv.
         $port = (int)($server['port'] ?? 0);
-        $port = $port > 0 ? $port : 80;
+        if ($port <= 0) {
+            $latency = (int)round((microtime(true) - $started) * 1000);
+            return $this->result('down', $latency, null, 'ICMP-Ping nicht verfuegbar (exec deaktiviert); bitte TCP-Port setzen.');
+        }
+
         $errno = 0;
         $errstr = '';
         $socket = @fsockopen($host, $port, $errno, $errstr, $timeout);
@@ -192,12 +206,15 @@ final class Monitor
 
     private function statusFromHeaders(array $headers): ?int
     {
+        // Letzte Statuszeile nehmen: nach Redirects zaehlt die finale Antwort,
+        // nicht der erste 3xx-Header.
+        $status = null;
         foreach ($headers as $header) {
             if (preg_match('#^HTTP/\S+\s+(\d{3})#', (string)$header, $matches)) {
-                return (int)$matches[1];
+                $status = (int)$matches[1];
             }
         }
 
-        return null;
+        return $status;
     }
 }

@@ -7,8 +7,18 @@ use RuntimeException;
 
 final class Schema
 {
+    /**
+     * Bei Schema-Aenderungen erhoehen. Der Fast-Path in ensure() ueberspringt
+     * dann alle information_schema-Abfragen, solange die Version passt.
+     */
+    public const VERSION = '2026-11-04-1';
+
     public static function ensure(Database $db): void
     {
+        if (self::currentVersion($db) === self::VERSION) {
+            return;
+        }
+
         foreach (self::statements($db->prefix()) as $statement) {
             $db->pdo()->exec($statement);
         }
@@ -21,6 +31,7 @@ final class Schema
         self::addColumn($db, 'servers', 'notify_on_recovery', '`notify_on_recovery` TINYINT(1) NOT NULL DEFAULT 1 AFTER `notify_on_down`');
         self::addColumn($db, 'servers', 'check_interval_minutes', '`check_interval_minutes` INT UNSIGNED NOT NULL DEFAULT 5 AFTER `timeout_seconds`');
         self::addColumn($db, 'servers', 'last_notified_status', "`last_notified_status` ENUM('unknown','up','down') NOT NULL DEFAULT 'unknown' AFTER `last_checked_at`");
+        self::addIndex($db, 'checks', 'checked_at_idx', '`checked_at`');
 
         $db->pdo()->exec("CREATE TABLE IF NOT EXISTS `{$db->prefix()}notifications` (
             `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -66,6 +77,29 @@ final class Schema
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
         self::seedDefaultPublicPage($db);
+        self::setVersion($db, self::VERSION);
+    }
+
+    private static function currentVersion(Database $db): ?string
+    {
+        try {
+            $row = $db->fetchOne(
+                'SELECT value FROM ' . $db->table('settings') . " WHERE name = 'schema_version'"
+            );
+        } catch (\Throwable $exception) {
+            return null;
+        }
+
+        return isset($row['value']) ? (string)$row['value'] : null;
+    }
+
+    private static function setVersion(Database $db, string $version): void
+    {
+        $db->execute(
+            'INSERT INTO ' . $db->table('settings') . ' (name, value) VALUES (:name, :value)
+             ON DUPLICATE KEY UPDATE value = VALUES(value)',
+            ['name' => 'schema_version', 'value' => $version]
+        );
     }
 
     public static function statements(string $prefix): array
@@ -125,6 +159,7 @@ final class Schema
                 `checked_at` DATETIME NOT NULL,
                 PRIMARY KEY (`id`),
                 KEY `server_checked` (`server_id`, `checked_at`),
+                KEY `checked_at_idx` (`checked_at`),
                 CONSTRAINT `{$prefix}checks_server_fk` FOREIGN KEY (`server_id`) REFERENCES `{$prefix}servers` (`id`) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
             "CREATE TABLE IF NOT EXISTS `{$prefix}settings` (
@@ -224,6 +259,19 @@ final class Schema
                  VALUES (:page_id, :server_id, :sort_order)',
                 ['page_id' => $pageId, 'server_id' => (int)$server['id'], 'sort_order' => $index]
             );
+        }
+    }
+
+    private static function addIndex(Database $db, string $table, string $index, string $columns): void
+    {
+        $row = $db->fetchOne(
+            'SELECT COUNT(*) AS total FROM information_schema.statistics
+             WHERE table_schema = DATABASE() AND table_name = :table AND index_name = :index',
+            ['table' => $db->prefix() . $table, 'index' => $index]
+        );
+
+        if ((int)($row['total'] ?? 0) === 0) {
+            $db->pdo()->exec('ALTER TABLE `' . $db->prefix() . $table . '` ADD INDEX `' . $index . '` (' . $columns . ')');
         }
     }
 

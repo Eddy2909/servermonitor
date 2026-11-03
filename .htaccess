@@ -1,0 +1,18 @@
+# Server Monitor - Apache-Konfiguration
+# Diese Datei schuetzt sensible Pfade und liefert die schoene Public-Status-URL.
+
+Options -Indexes
+
+# Direkter Zugriff auf App-, Cron-Includes und Schema verhindern.
+RedirectMatch 404 ^/?(app|schema\.sql)(/|$)
+
+<FilesMatch "^(config\.php|schema\.sql)$">
+    Require all denied
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # /status/<token>  ->  public.php?token=<token>
+    RewriteRule ^status/([A-Za-z0-9]+)/?$ public.php?token=$1 [L,QSA]
+</IfModule>
